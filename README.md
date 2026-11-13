@@ -18,6 +18,18 @@ so the files can sit on a public host such as GitHub Pages and still be unreadab
 
 The editor only works on your computer. On the public website the editor page shows a notice and cannot change anything.
 
+## Quick entry
+
+In the editor press **Quick entry**: say what happened, optionally add a sentence and one photo, and save. A photo fills in the date by itself. Unless you tick "She is happy to share this with family", the entry stays parents-only.
+
+## Time stamps and seals
+
+Every entry has two dates. The **event date** is the one you choose. The **"written down on" date** is set by the editor the moment a real entry is first saved and cannot be typed or changed. The journal shows it on each entry, and says plainly when a moment was added long after it happened.
+
+Each save also makes a **seal**: a fingerprint of the entry's words, dates and files. Only the fingerprint goes into the public file `content/seals.json`; nothing about the entry can be read from it. Later, anyone you show the entry to can confirm that it matches a fingerprint that has been on GitHub since that date. Every edit adds a new seal, so the history of changes is visible too.
+
+What this does and does not prove: it shows an entry existed in exactly this form when its seal was published. It does not prove the event happened; certificates, programs, published results and a teacher's word do that, so attach them when you have them. Publish soon after adding entries, because the date that an outsider can check is the date the seal reached GitHub.
+
 ## Who sees what
 
 | Entry setting | Parent passphrase | Family passphrase | No passphrase |

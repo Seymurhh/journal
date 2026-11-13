@@ -168,3 +168,7 @@ body.studio h1 { background: linear-gradient(90deg, #f6eedd, #e2b659); -webkit-b
 body.studio main { max-width: 1500px; }
 .stagebox:fullscreen { aspect-ratio: auto; border-radius: 0; border: 0; display: grid; place-items: center; background: #000; }
 .stagebox:fullscreen #stage { height: auto; }
+#cap-preview { width: 100%; border-radius: 10px; background: #000; }
+.proof { margin: 28px 0 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); font-size: .92rem; color: var(--soft); }
+.proof summary { cursor: pointer; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.proof p { margin: .7em 0 0; } .proof code { font-size: .85em; } .proof-status.ok { color: #2f6b2a; font-weight: 600; } .proof-status.wait { color: #7a5a00; }

@@ -1,6 +1,6 @@
 // The parent editor. Works only on your own computer, through "Start Editor".
 import { $, h, icon, fetchJSON, b64, newRawKey, newId, importKey, wrapSection, sealVault, unwrapVault, readVault, sealBytes, openBytes,
-  session, fmtDate, sortEntries, mediaURL, dropMediaCache, fmtSize, ICON_NAMES, COLORS, KIND_LABEL, KIND_ICON } from './core.js';
+  session, fmtDate, sortEntries, mediaURL, dropMediaCache, fmtSize, ICON_NAMES, COLORS, KIND_LABEL, KIND_ICON, sha256hex, sealHash, hasDate } from './core.js?v=6';
 
 const main = $('#main');
 const A = { vaults: {}, raw: {}, keys: {}, data: null };
@@ -135,6 +135,48 @@ async function save() {
   A.vaults = { fam, par };
 }
 
+// ---------- time stamps and seals ----------
+// recordedAt = when the real entry was first written down. It is set once by the editor and cannot be typed.
+// The seal is a fingerprint of the entry's words, dates and files. Only the fingerprint is published (content/seals.json),
+// so anyone can later confirm that an entry existed in this exact form at that time, without the journal being public.
+async function stamp(e, before) {
+  const now = new Date().toISOString();
+  if (!e.recordedAt || (before && before.placeholder && !e.placeholder)) e.recordedAt = now;
+  if (e.placeholder) return;
+  e.mediaDigest = e.media.length ? await sha256hex(e.media.map((m) => m.sha256 || m.id).join('|')) : '';
+  e.seal = e.seal || { salt: newId() + newId(), log: [] };
+  const hash = await sealHash(e);
+  if (e.seal.hash === hash) return;
+  e.seal.hash = hash; e.seal.log.push({ at: now, hash });
+  const list = (await fetchJSON('content/seals.json')) || [];
+  list.push({ at: now, hash });
+  await put('content/seals.json', new TextEncoder().encode(JSON.stringify(list, null, 1)));
+}
+
+// The date a photo was taken, read from the photo itself (before that hidden data is removed).
+async function photoDate(file) {
+  try {
+    const b = new DataView(await file.slice(0, 262144).arrayBuffer());
+    if (b.byteLength < 12 || b.getUint16(0) !== 0xffd8) return '';
+    for (let p = 2; p + 10 < b.byteLength;) {
+      const marker = b.getUint16(p), len = b.getUint16(p + 2);
+      if ((marker & 0xff00) !== 0xff00) break;
+      if (marker === 0xffe1 && b.getUint32(p + 4) === 0x45786966) {
+        const t = p + 10, le = b.getUint16(t) === 0x4949, u16 = (o) => b.getUint16(o, le), u32 = (o) => b.getUint32(o, le);
+        const find = (ifd, tag) => { const n = u16(ifd); for (let i = 0; i < n; i++) if (u16(ifd + 2 + i * 12) === tag) return ifd + 2 + i * 12; return 0; };
+        const text = (at) => { let v = ''; const o = t + u32(at + 8); for (let i = 0; i < 10; i++) v += String.fromCharCode(b.getUint8(o + i)); return /^\d{4}:\d{2}:\d{2}$/.test(v) ? v.replace(/:/g, '-') : ''; };
+        const ifd0 = t + u32(t + 4), sub = find(ifd0, 0x8769), inner = sub && t + u32(sub + 8);
+        const at = (inner && (find(inner, 0x9003) || find(inner, 0x9004))) || find(ifd0, 0x0132);
+        return at ? text(at) : '';
+      }
+      p += 2 + len;
+    }
+  } catch {}
+  return '';
+}
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const activities = () => [...new Set(['Piano', 'Cello', 'Chess', 'Tennis', 'Karate', ...A.data.entries.map((e) => e.subActivity).filter(Boolean)])];
+
 // ---------- shell ----------
 function start() {
   addEventListener('hashchange', route);
@@ -145,7 +187,7 @@ function route() {
   const tabs = [['', 'Entries'], ['areas', 'Areas'], ['settings', 'Settings'], ['publish', 'Publish']];
   $('#nav').replaceChildren(...tabs.map(([p, t]) => h('a', { href: `#/${p}`, 'aria-current': p === page ? 'page' : null }, t)),
     h('a', { href: './' }, 'View journal'));
-  ({ '': list, new: () => edit(null), edit: () => edit(arg), areas, settings, publish }[page] || list)();
+  ({ '': list, quick, new: () => edit(null), edit: () => edit(arg), areas, settings, publish }[page] || list)();
   scrollTo(0, 0);
 }
 const catName = (id) => (A.data.categories.find((c) => c.id === id) || { name: 'Other' }).name;
@@ -153,7 +195,7 @@ const catName = (id) => (A.data.categories.find((c) => c.id === id) || { name: '
 function list() {
   const rows = sortEntries(A.data.entries);
   main.replaceChildren(h('div', { class: 'panel' },
-    h('div', { class: 'row between' }, h('h1', null, 'Entries'), h('a', { class: 'btn', href: '#/new' }, icon('plus', 16), ' New entry')),
+    h('div', { class: 'row between' }, h('h1', null, 'Entries'), h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/quick' }, icon('plus', 16), ' Quick entry'), h('a', { class: 'btn ghost', href: '#/new' }, 'Full entry'))),
     h('div', { class: 'tablewrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Title', 'Date', 'Area', 'Who can see it', 'Files'].map((t) => h('th', { scope: 'col' }, t)))),
       h('tbody', null, rows.map((e) => h('tr', { class: e.status === 'archived' ? 'archived' : null },
@@ -191,6 +233,7 @@ async function addFile(file) {
   if (file.size > MAX_FILE) throw new Error(`"${file.name}" is ${fmtSize(file.size)}. Files must be under 95 MB; shorten or compress the video first.`);
   const m = { id: newId(), kind: kindOf(file), name: file.name, mime: file.type || 'application/octet-stream', size: file.size, caption: '', alt: '',
     privateOnly: false, showsOthers: false, consentOk: false, thumb: false, key: 'parent' };
+  if (m.kind === 'image') m.taken = await photoDate(file);
   let bytes, thumb = null;
   if (m.kind === 'image') {
     let bmp;
@@ -203,6 +246,7 @@ async function addFile(file) {
     bytes = new Uint8Array(await file.arrayBuffer());
     if (m.kind === 'video') thumb = await videoFrame(file);
   }
+  m.sha256 = await sha256hex(bytes);
   await put(`media/${m.id}.enc`, await sealBytes(A.keys.parent, bytes));
   if (thumb) { await put(`media/${m.id}.t.enc`, await sealBytes(A.keys.parent, thumb)); m.thumb = true; }
   return m;
@@ -246,13 +290,17 @@ function edit(id) {
     upNote.textContent = '';
     for (const f of drop.files) {
       upNote.textContent = `Locking and saving ${f.name}…`;
-      try { const m = await addFile(f); e.media.push(m); added.push(m); upNote.textContent = ''; }
+      try {
+        const m = await addFile(f); e.media.push(m); added.push(m); upNote.textContent = '';
+        if (m.taken && !e.dateStart) { e.dateStart = m.taken; e.datePrecision = 'day'; dateInput.value = m.taken; upNote.textContent = 'Date filled in from the photo. Change it if it is wrong.'; }
+      }
       catch (err) { upNote.textContent = err.message; break; }
       drawMedia();
     }
     drop.value = '';
   });
 
+  const dateInput = bind('dateStart', h('input', { type: 'date', value: e.dateStart || '' }));
   const tags = h('input', { type: 'text', value: (e.tags || []).join(', ') });
   const others = A.data.entries.filter((x) => x.id !== e.id).map((x) => [x.id, x.title]);
   const dropFiles = async (keep) => { for (const m of keep) { await del(`media/${m.id}.enc`); if (m.thumb) await del(`media/${m.id}.t.enc`); } };
@@ -264,19 +312,21 @@ function edit(id) {
     if (e.datePrecision === 'unknown') { e.dateStart = ''; e.dateEnd = ''; }
     e.sortOrder = Number(e.sortOrder) || 0;
     e.updatedAt = new Date().toISOString();
-    if (isNew) { e.createdAt = e.updatedAt; A.data.entries.push(e); } else Object.assign(orig, e);
-    try { await save(); await dropFiles(removed); toast('Saved and locked.'); location.hash = '#/'; }
-    catch (err) { btn.disabled = false; toast('Could not save. Is the editor window still running?'); }
+    try {
+      await stamp(e, orig);
+      if (isNew) { e.createdAt = e.updatedAt; A.data.entries.push(e); } else Object.assign(orig, e);
+      await save(); await dropFiles(removed); toast('Saved, locked and sealed.'); location.hash = '#/';
+    } catch (err) { btn.disabled = false; toast('Could not save. Is the editor window still running?'); }
   } },
     h('a', { class: 'backlink', href: '#/', onclick: () => dropFiles(added) }, icon('back', 16), ' All entries (discard changes)'),
     h('h1', null, isNew ? 'New entry' : 'Edit entry'),
     field('Title', text('title', { required: true })),
     h('div', { class: 'grid2' },
       field('Area', bind('category', select(A.data.categories.map((c) => [c.id, c.name]), e.category), 'change')),
-      field('Activity within the area (optional)', text('subActivity'), 'For example Piano, Tennis, Karate')),
+      field('Activity within the area (optional)', text('subActivity', { list: 'acts' }), 'For example Piano, Cello, Tennis'), h('datalist', { id: 'acts' }, activities().map((a) => h('option', { value: a })))),
     h('div', { class: 'grid3' },
       field('How exact is the date?', bind('datePrecision', select([['day', 'Exact day'], ['month', 'Month and year'], ['season', 'Season and year'], ['year', 'Year only'], ['unknown', 'Not known yet']], e.datePrecision), 'change')),
-      field('Date', bind('dateStart', h('input', { type: 'date', value: e.dateStart || '' })), 'For a month, season or year, pick any day inside it'),
+      field('Date', dateInput, 'For a month, season or year, pick any day inside it'),
       field('End date (optional)', bind('dateEnd', h('input', { type: 'date', value: e.dateEnd || '' })))),
     field('What happened', area('description', 4), 'Effort and process count as much as awards.'),
     field('In her own words (optional)', area('reflection', 4), 'What I learned or how I felt. Only if she wants to add it.'),
@@ -308,6 +358,55 @@ function edit(id) {
       } }, 'Delete')));
   main.replaceChildren(form);
   drawMedia(); refresh();
+}
+
+// ---------- quick entry: one photo, one or two sentences, done in a minute ----------
+function quick() {
+  let photo = null;
+  const title = h('input', { type: 'text', required: true, maxlength: 90, placeholder: 'For example: Played at the winter recital' });
+  const more = h('textarea', { rows: 3, placeholder: 'One or two sentences. What was hard? What is she proud of?' });
+  const cat = select(A.data.categories.map((c) => [c.id, c.name]), A.data.categories[0].id);
+  const act = h('input', { type: 'text', list: 'acts', placeholder: 'Piano, Cello, Chess…' });
+  const date = h('input', { type: 'date', value: today(), required: true });
+  const file = h('input', { type: 'file', id: 'files', accept: 'image/*,video/*,audio/*,application/pdf,.mid,.midi' });
+  const share = h('input', { type: 'checkbox' });
+  const note = h('p', { class: 'msg', role: 'alert' }), preview = h('div', { class: 'media-edit' });
+  file.addEventListener('change', async () => {
+    if (!file.files[0]) return;
+    note.textContent = 'Locking the file…';
+    try {
+      if (photo) { await del(`media/${photo.id}.enc`); if (photo.thumb) await del(`media/${photo.id}.t.enc`); }
+      photo = await addFile(file.files[0]);
+      if (photo.taken) date.value = photo.taken;
+      note.textContent = photo.taken ? 'Date filled in from the photo. Change it if it is wrong.' : '';
+      const box = h('div', { class: 'thumb c-pending' }, icon(KIND_ICON[photo.kind], 26));
+      if (photo.thumb) mediaURL(photo, A.keys, true).then((u) => box.replaceChildren(h('img', { src: u, alt: '' }))).catch(() => {});
+      preview.replaceChildren(h('div', { class: 'media-row' }, box, h('div', { class: 'grow' }, h('strong', null, photo.name))));
+    } catch (err) { note.textContent = err.message; }
+    file.value = '';
+  });
+  main.replaceChildren(h('form', { class: 'panel narrow', onsubmit: async (ev) => {
+    ev.preventDefault();
+    ev.submitter.disabled = true;
+    const now = new Date().toISOString();
+    const e = normalize({ id: newId(), title: title.value.trim(), description: more.value.trim(), category: cat.value, subActivity: act.value.trim(),
+      dateStart: date.value, datePrecision: 'day', media: photo ? [photo] : [], status: 'published',
+      visibility: share.checked ? 'family' : 'private', childOk: share.checked ? 'yes' : 'not_asked', createdAt: now, updatedAt: now });
+    try { await stamp(e, null); A.data.entries.push(e); await save(); toast('Saved, locked and sealed.'); location.hash = '#/'; }
+    catch { ev.submitter.disabled = false; toast('Could not save. Is the editor window still running?'); }
+  } },
+    h('a', { class: 'backlink', href: '#/' }, icon('back', 16), ' All entries'),
+    h('h1', null, 'Quick entry'),
+    field('What happened?', title),
+    field('A little more (optional)', more),
+    h('div', { class: 'grid2' }, field('Area', cat), field('Activity (optional)', act)),
+    h('datalist', { id: 'acts' }, activities().map((a) => h('option', { value: a }))),
+    preview, h('label', { class: 'btn ghost', for: 'files' }, icon('plus', 16), ' Add a photo or file'), file,
+    field('When did it happen?', date, 'Today unless you change it. A photo fills this in by itself.'),
+    h('label', { class: 'check' }, share, 'She is happy to share this with family'),
+    h('small', null, 'Left unticked, the entry is kept to parents only. The time you save it is recorded automatically and cannot be changed.'),
+    h('button', { class: 'btn', type: 'submit' }, 'Save'), note));
+  title.focus();
 }
 
 // ---------- areas ----------

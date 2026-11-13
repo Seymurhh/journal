@@ -74,6 +74,15 @@ export const session = {
   clear() { try { sessionStorage.removeItem(SKEY); } catch {} },
 };
 
+// ---------- seals: a fingerprint of an entry, published without its content, so its date and wording can be checked later ----------
+export async function sha256hex(data) {
+  const bytes = typeof data === 'string' ? te.encode(data) : data;
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+export const sealHash = (e) => sha256hex(JSON.stringify([e.seal.salt, e.title, e.dateStart || '', e.dateEnd || '', e.datePrecision, e.category, e.subActivity || '',
+  e.description || '', e.reflection || '', e.parentNote || '', e.mediaDigest || '']));
+export const fmtDay = (iso) => new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
 // ---------- DOM ----------
 export const $ = (s, r = document) => r.querySelector(s);
 export function h(tag, attrs, ...kids) {

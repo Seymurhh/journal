@@ -176,7 +176,7 @@ ui.mic.addEventListener('click', async () => {
   }
   if (R.on || P.busy) return;
   try { M.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
-  catch { return say('rec-msg', 'The microphone was not allowed. Allow it for this page and try again.'); }
+  catch { return say('rec-msg', 'The microphone could not be used. Open this page in Chrome itself (not inside another app), click the lock icon in the address bar, allow the microphone, and try again.'); }
   pause();
   P.ctx = P.ctx || new AudioContext(); await P.ctx.resume();
   M.node = P.ctx.createAnalyser(); M.node.fftSize = 2048;
@@ -208,7 +208,7 @@ ui.capture.addEventListener('click', async () => {
   if (P.bus) P.bus.connect(V.dest);
   if (M.on) M.src.connect(V.dest);
   const stream = new MediaStream([...canvas.captureStream(60).getVideoTracks(), ...V.dest.stream.getAudioTracks()]);
-  V.chunks = []; V.rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 12e6, audioBitsPerSecond: 160000 });
+  V.chunks = []; V.rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 8e6, audioBitsPerSecond: 160000 });
   const began = performance.now(), ext = type.startsWith('video/mp4') ? 'mp4' : 'webm';
   V.rec.ondataavailable = (e) => { if (e.data.size) V.chunks.push(e.data); };
   V.rec.onstop = () => {
@@ -217,10 +217,14 @@ ui.capture.addEventListener('click', async () => {
     V.rec = null; V.dest = null; V.chunks = [];
     ui.capture.textContent = 'Start recording'; ui.capture.classList.remove('rec'); ui.export.disabled = !P.piece;
     if (!blob.size) return say('cap-msg', 'Nothing was recorded.');
-    download(blob, blob.type, `${safeName()}-live.${ext}`);
-    say('cap-msg', `Saved ${mmss((performance.now() - began) / 1000)} of video (${(blob.size / 1048576).toFixed(1)} MB, .${ext}) to your Downloads folder.`);
+    // Show the result on the page as well, so it can be watched and saved even where automatic downloads are blocked.
+    const url = URL.createObjectURL(blob), name = `${safeName()}-live.${ext}`, prev = $('#cap-preview'), link = $('#cap-link');
+    prev.src = url; prev.hidden = false; link.href = url; link.download = name; link.hidden = false;
+    link.click();
+    say('cap-msg', `Recorded ${mmss((performance.now() - began) / 1000)} of video (${(blob.size / 1048576).toFixed(1)} MB, .${ext}). It should be in your Downloads folder; if not, press "Save this recording".`);
   };
   V.rec.start(500);
+  $('#cap-preview').hidden = true; $('#cap-link').hidden = true;
   ui.capture.textContent = 'Stop and save'; ui.capture.classList.add('rec'); ui.export.disabled = true;
   say('cap-msg', 'Recording the screen… press Play, or use the microphone, then press "Stop and save".');
 });

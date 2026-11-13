@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Piano studio</title>
-<link rel="stylesheet" href="assets/css/site.css?v=5">
+<link rel="stylesheet" href="assets/css/site.css?v=6">
 </head>
 <body class="studio">
 <a class="skip" href="#main">Skip to content</a>
@@ -65,9 +65,11 @@
       <h2>Or record what is on screen</h2>
       <button class="btn ghost" id="capture">Start recording</button>
       <p id="cap-msg" class="hint" role="status">Records the picture live, with sound, until you press Stop. Works with the microphone view too.</p>
+      <video id="cap-preview" controls playsinline hidden></video>
+      <a id="cap-link" class="btn" hidden>Save this recording</a>
     </section>
   </div>
 </main>
-<script type="module" src="assets/js/studio.js?v=5"></script>
+<script type="module" src="assets/js/studio.js?v=6"></script>
 </body>
 </html>

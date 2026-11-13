@@ -1,6 +1,6 @@
 // The journal viewer. Loads the encrypted vaults, asks for the passphrase, and draws the pages.
 import { $, h, icon, fetchJSON, unwrapVault, readVault, importKey, b64, session, fmtDate, sortEntries, yearOf, hasDate,
-  mediaURL, fmtSize, KIND_LABEL, KIND_ICON } from './core.js';
+  mediaURL, fmtSize, KIND_LABEL, KIND_ICON, sealHash, fmtDay } from './core.js?v=6';
 
 const main = $('#main');
 const S = { mode: null, data: null, keys: {}, local: false };
@@ -13,6 +13,7 @@ async function boot() {
   S.local = !!(ping && ping.editor);
   if (!fam || !par) return notSetUp();
   S.vaults = { fam, par };
+  S.seals = new Set(((await fetchJSON('content/seals.json')) || []).map((x) => x.hash));
   const saved = session.load();
   if (saved) {
     try { await openWith(saved); return start(); } catch { session.clear(); }
@@ -218,6 +219,29 @@ function lightbox(m) {
     .catch(() => dlg.append(h('p', null, 'This photo could not be opened.')));
 }
 
+// When was this written down, and can that be checked?
+function provenance(e) {
+  if (!e.recordedAt || e.placeholder) return null;
+  const event = hasDate(e) ? new Date(e.dateEnd || e.dateStart) : null, rec = new Date(e.recordedAt);
+  const days = event ? Math.round((rec - event) / 864e5) : 0;
+  const slack = { day: 21, month: 60, season: 150, year: 400 }[e.datePrecision] || 21;
+  const late = event && days > slack;
+  const edits = e.seal ? e.seal.log.length - 1 : 0;
+  const status = h('p', { class: 'proof-status' }, 'Checking the seal…');
+  if (!e.seal) status.textContent = 'This entry has no seal yet. It gets one the next time it is saved in the editor.';
+  else sealHash(e).then((hash) => {
+    const ok = hash === e.seal.hash && S.seals.has(hash);
+    status.textContent = ok ? 'Checked: the entry matches its published seal, so it has not been changed since it was sealed.'
+      : hash === e.seal.hash ? 'Sealed on this computer. The seal appears on the website after the next publish.' : 'The entry does not match its seal.';
+    status.classList.add(ok ? 'ok' : 'wait');
+  });
+  return h('details', { class: 'proof' },
+    h('summary', null, icon('lock', 15), ` Written down on ${fmtDay(e.recordedAt)}`, late ? ` (added about ${days > 330 ? Math.round(days / 365) + ' year' + (days > 547 ? 's' : '') : Math.round(days / 30) + ' months'} after it happened)` : ''),
+    h('p', null, late ? 'This moment was added to the journal some time after it happened, from memory and saved material.' : 'This moment was written into the journal close to when it happened.',
+      edits > 0 ? ` It has been edited ${edits} ${edits === 1 ? 'time' : 'times'} since; the last change was on ${fmtDay(e.seal.log[e.seal.log.length - 1].at)}.` : ''),
+    e.seal && h('p', null, 'Seal: ', h('code', null, e.seal.hash.slice(0, 16) + '…')), status);
+}
+
 function entry(id) {
   const e = S.data.entries.find((x) => x.id === id);
   if (!e) return h('div', null, h('h1', null, 'Not found'), h('a', { href: '#/journey' }, 'Back to the journey'));
@@ -234,6 +258,7 @@ function entry(id) {
     e.parentNote && h('aside', { class: 'parent-note' }, h('h2', null, 'A note from a parent'), h('p', null, e.parentNote)),
     (e.tags || []).length > 0 && h('p', { class: 'tags' }, e.tags.map((t) => h('span', null, '#' + t))),
     related && h('p', null, 'Related: ', h('a', { href: `#/entry/${related.id}` }, related.title)),
+    provenance(e),
     S.mode === 'parent' && S.local && h('p', null, h('a', { class: 'btn ghost', href: `admin.html#/edit/${e.id}` }, icon('edit', 16), ' Edit this entry')));
 }
 
