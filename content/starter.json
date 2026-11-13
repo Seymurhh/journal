@@ -1,0 +1,41 @@
+{
+  "site": {
+    "title": "[Journal title]",
+    "intro": "[A sentence or two introducing her, written together with her.]",
+    "now": "[What she is curious about right now.]"
+  },
+  "categories": [
+    {"id": "music", "name": "Music", "icon": "music", "color": "teal", "intro": "Piano, pieces learned, recitals and recordings."},
+    {"id": "chess", "name": "Chess & Strategy", "icon": "chess", "color": "navy", "intro": "Games, tournaments, puzzles and chess projects."},
+    {"id": "math", "name": "Math & Discovery", "icon": "math", "color": "gold", "intro": "Puzzles, explorations and things she is curious about."},
+    {"id": "art", "name": "Art & Making", "icon": "art", "color": "coral", "intro": "Drawings, crafts and creative experiments."},
+    {"id": "sports", "name": "Sports & Movement", "icon": "sports", "color": "green", "intro": "Tennis, karate and other sports."},
+    {"id": "projects", "name": "Projects & Experiments", "icon": "projects", "color": "plum", "intro": "Work that mixes interests: music, technology, math and art."},
+    {"id": "community", "name": "Community & Sharing", "icon": "community", "color": "rose", "intro": "Things she chooses to share with or teach to others."}
+  ],
+  "entries": [
+    {"title": "Chess Passion Project video", "category": "chess", "dateStart": "2024-10-01", "datePrecision": "month",
+     "description": "[A video project about chess, made in October 2024. Add what it was about and how she made it. The video itself still needs to be added here.]",
+     "placeholder": true, "visibility": "family", "status": "published", "featured": true},
+    {"title": "[Sample] A chess tournament", "category": "chess", "datePrecision": "unknown",
+     "description": "[Which tournament, when, and one thing she remembers from it.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "[Sample] First piano recital", "category": "music", "subActivity": "Piano", "datePrecision": "unknown",
+     "description": "[Where it was, what she played, and the program or a recording if you have one.]",
+     "reflection": "[What I learned / how I felt, in her own words, only if she wants to add it.]", "placeholder": true, "visibility": "family", "status": "published", "featured": true},
+    {"title": "[Sample] Learning a difficult passage", "category": "music", "subActivity": "Piano", "datePrecision": "unknown",
+     "description": "[A piece or passage that took real practice. No certificate needed.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "[Sample] A puzzle she solved", "category": "math", "datePrecision": "unknown",
+     "description": "[The puzzle or topic, with her explanation or a photo of the work.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "[Sample] A finished drawing", "category": "art", "datePrecision": "unknown",
+     "description": "[A picture of the artwork and a note about the idea and materials.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "[Sample] A new tennis skill", "category": "sports", "subActivity": "Tennis", "datePrecision": "unknown",
+     "description": "[The skill, and what felt challenging about it.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "[Sample] A karate milestone", "category": "sports", "subActivity": "Karate", "datePrecision": "unknown",
+     "description": "[A belt, a kata, or simply something she worked hard on.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "Piano visualizer", "category": "projects", "datePrecision": "unknown",
+     "description": "[Planned: a tool that turns her piano playing into a 3D visual. Not built yet.]", "placeholder": true, "visibility": "family", "status": "published"},
+    {"title": "[Idea] Teaching chess to younger kids", "category": "community", "datePrecision": "unknown",
+     "description": "[An idea for when she is ready and wants to: sharing chess with younger children. Kept private until it is real and she chooses to share it.]",
+     "placeholder": true, "visibility": "private", "status": "draft"}
+  ]
+}
