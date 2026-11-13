@@ -1,8 +1,8 @@
 // The 3D scene: a lacquered piano with jewel-coloured notes travelling toward the keys they play.
 // Everything is a pure function of the music time t, so a video export draws exactly what playback shows.
-import * as THREE from '../vendor/three.min.js';
-import { isBlack, noteName } from './midi.js';
-import { buildFlight, voicesFromPiece } from './flight.js';
+import * as THREE from '../vendor/three.min.js?v=5';
+import { isBlack, noteName } from './midi.js?v=5';
+import { buildFlight, voicesFromPiece } from './flight.js?v=5';
 
 const THEMES = {
   noir: { bg: ['#020203', '#1a0d10'], fog: '#0a0608', runway: '#050507', trim: '#e2b659', felt: '#8a1228', white: '#f7f1e6', black: '#0a0a0c',

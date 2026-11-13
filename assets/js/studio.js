@@ -1,8 +1,8 @@
 // Piano studio: load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
-import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js';
-import { parseMidi, fromRecording, writeMidi, demoPiece } from './midi.js';
-import { createStage } from './stage.js';
-import { makeOutput, voice, renderPiece } from './synth.js';
+import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
+import { parseMidi, fromRecording, writeMidi, demoPiece } from './midi.js?v=5';
+import { createStage } from './stage.js?v=5';
+import { makeOutput, voice, renderPiece } from './synth.js?v=5';
 
 const LEAD = 1.5, TAIL = 2; // seconds of runway before the first note and after the last
 const canvas = $('#stage'), stage = createStage(canvas);
@@ -245,7 +245,7 @@ async function makeVideo() {
   ui.prog.hidden = false; ui.prog.value = 0; ui.download.hidden = true;
   say('exp-msg', 'Making the video. Keep this tab open and in front.');
   try {
-    const { Muxer, ArrayBufferTarget } = await import('../vendor/mp4-muxer.js');
+    const { Muxer, ArrayBufferTarget } = await import('../vendor/mp4-muxer.js?v=5');
     const muxer = new Muxer({ target: new ArrayBufferTarget(), fastStart: 'in-memory', firstTimestampBehavior: 'offset',
       video: { codec: vc.mux, width: w, height: h, frameRate: fps },
       ...(ac ? { audio: { codec: ac.mux, sampleRate: 48000, numberOfChannels: 2 } } : {}) });
