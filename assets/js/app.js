@@ -124,7 +124,8 @@ function route() {
   const [, page = '', arg = ''] = location.hash.split('/');
   const nav = [['', 'Home'], ['journey', 'My Journey'], ...areas().map((c) => [`area/${c.id}`, c.name]), ['gallery', 'Gallery']];
   const here = page === 'area' ? `area/${arg}` : page === 'entry' ? 'journey' : page;
-  $('#nav').replaceChildren(...nav.map(([p, label]) => h('a', { href: `#/${p}`, 'aria-current': p === here ? 'page' : null }, label)));
+  $('#nav').replaceChildren(...nav.map(([p, label]) => h('a', { href: `#/${p}`, 'aria-current': p === here ? 'page' : null }, label)),
+    h('a', { href: 'studio.html' }, 'Piano studio'));
   const view = { '': home, journey, area, entry, gallery }[page] || home;
   main.replaceChildren(view(decodeURIComponent(arg)));
   document.title = S.data.site.title;
@@ -201,7 +202,9 @@ function mediaBlock(m) {
         btn.replaceWith(player);
       });
     } }, icon(KIND_ICON[m.kind] || 'file', 18), ` ${m.kind === 'video' ? 'Play video' : m.kind === 'audio' ? 'Play recording' : 'Open ' + KIND_LABEL[m.kind]} (${fmtSize(m.size)})`);
-    fig.append(...[m.thumb && lazyThumb(m, 'thumb big'), btn, cap].filter(Boolean));
+    const watch = m.kind === 'midi' && h('a', { class: 'btn', href: `studio.html#m=${m.id}&k=${m.key}&n=${encodeURIComponent(m.caption || m.name.replace(/\.midi?$/i, ''))}` },
+      icon('play', 18), ' Watch in the piano studio');
+    fig.append(...[m.thumb && lazyThumb(m, 'thumb big'), watch, btn, cap].filter(Boolean));
   }
   return fig;
 }

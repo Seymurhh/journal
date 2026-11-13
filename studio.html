@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Piano studio</title>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body class="studio">
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="./"><svg class="lily" viewBox="0 0 32 26" aria-hidden="true"><path d="M16 3c3.200 4 3.200 11 0 16c-3.200-5-3.200-12 0-16z"/><path d="M5 8c5 1 9 5 11 11c-6 0-11-4-11-11z"/><path d="M27 8c-5 1-9 5-11 11c6 0 11-4 11-11z"/><path d="M1 16c5-.5 10 .5 15 3c-5 3-11 2-15-3z"/><path d="M31 16c-5-.5-10 .5-15 3c5 3 11 2 15-3z"/></svg><span>Piano studio</span></a>
+  <nav aria-label="Main"><a href="./">Back to the journal</a></nav>
+</header>
+<main id="main" tabindex="-1">
+  <h1 id="piece-title">Piano studio</h1>
+  <p class="lead" id="piece-info">Open a MIDI file, record from the piano, or try the demo.</p>
+  <div class="stagebox">
+    <canvas id="stage" aria-label="3D piano: notes travel toward the keys they play"></canvas>
+    <p id="overlay" class="overlay"></p>
+  </div>
+  <div class="transport" role="group" aria-label="Playback">
+    <button class="btn" id="play" disabled>Play</button>
+    <input type="range" id="seek" min="0" max="1" step="0.01" value="0" aria-label="Position in the piece" disabled>
+    <span id="clock" aria-live="off">0:00 / 0:00</span>
+    <label class="inline">Speed <select id="speed"><option value="0.5">Half</option><option value="0.75">Slower</option><option value="1" selected>Normal</option></select></label>
+  </div>
+  <div class="studio-grid">
+    <section class="panel">
+      <h2>1. Music</h2>
+      <div class="row">
+        <label class="btn ghost" for="midifile">Open a MIDI file</label><input type="file" id="midifile" accept=".mid,.midi,audio/midi">
+        <button class="btn ghost" id="demo">Try the demo</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="record">Record from the piano</button>
+        <button class="btn ghost" id="savemidi" disabled>Save as MIDI file</button>
+      </div>
+      <div class="row"><button class="btn ghost" id="mic">Listen with the microphone</button></div>
+      <p id="rec-msg" class="hint" role="status">To record: connect the piano's USB TO HOST port to this computer and use Chrome or Edge.</p>
+    </section>
+    <section class="panel">
+      <h2>2. Look</h2>
+      <label class="check"><input type="checkbox" id="labels" checked> Show note names</label>
+      <label class="check"><input type="checkbox" id="effects" checked> Sparks and light beams</label>
+      <label class="check"><input type="checkbox" id="motion" checked> Gentle camera movement</label>
+      <label class="field"><span>View</span><select id="view"><option value="piano">Piano keys</option><option value="flight">Flight lines</option></select></label>
+      <label class="field"><span>Theme</span><select id="theme"><option value="noir">Gold Noir</option><option value="jewel">Royal Jewel</option><option value="emerald">Emerald Velvet</option></select></label>
+      <label class="field"><span>Title shown in the video (optional)</span><input type="text" id="vtitle" maxlength="60"></label>
+    </section>
+    <section class="panel">
+      <h2>3. Video</h2>
+      <div class="grid2">
+        <label class="field"><span>Size</span><select id="size"><option value="1920x1080">1080p</option><option value="1280x720">720p</option></select></label>
+        <label class="field"><span>Smoothness</span><select id="fps"><option value="30">30 frames a second</option><option value="60">60 frames a second</option></select></label>
+      </div>
+      <button class="btn" id="export" disabled>Make the video</button>
+      <progress id="prog" max="1" value="0" hidden></progress>
+      <p id="exp-msg" class="hint" role="status">The sound in the video is a synthesized piano, not the room recording.</p>
+      <a id="download" class="btn ghost" hidden>Save the video</a>
+      <h2>Or record what is on screen</h2>
+      <button class="btn ghost" id="capture">Start recording</button>
+      <p id="cap-msg" class="hint" role="status">Records the picture live, with sound, until you press Stop. Works with the microphone view too.</p>
+    </section>
+  </div>
+</main>
+<script type="module" src="assets/js/studio.js"></script>
+</body>
+</html>

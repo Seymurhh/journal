@@ -64,6 +64,30 @@ Each later update: `git add . && git commit -m "Update" && git push`.
 - iPhone HEIC photos: export as JPEG first (in Photos: File, Export, JPEG).
 - Photos are resized to 1800 px and re-encoded, which also removes hidden location data.
 
+## Piano studio
+
+`studio.html` turns a piano performance into a 3D view (notes travelling to a keyboard that lights up) and can make an MP4 video. It runs entirely in the browser; nothing is uploaded.
+
+**Recording her playing (Yamaha digital piano)**
+
+1. Connect a USB A-to-B cable ("printer cable") from the piano's USB TO HOST port to the computer. A Mac with only USB-C ports needs a USB-C adapter or a USB-C to USB-B cable.
+2. Open the studio in Chrome or Edge (Safari cannot talk to MIDI devices): start the editor and go to `http://127.0.0.1:8321/studio.html`, or use the live site.
+3. Press **Record from the piano** and allow MIDI access when the browser asks. Keys light up on screen as she plays.
+4. Press **Stop recording**, then **Play** to watch it.
+5. Press **Save as MIDI file** to keep it. You can film with the phone at the same time; the two are separate files.
+
+**Making a video:** choose size and smoothness, press **Make the video**, wait for the bar, then **Save the video**. Keep the tab in front while it works. The sound is a synthesized piano, not the room recording.
+
+**Putting it in the journal:** in the editor, attach the `.mid` file (and the video if you like) to a Music entry. Family members then get a **Watch in the piano studio** button on that entry.
+
+**Two views:** "Piano keys" shows notes travelling to a lit keyboard. "Flight lines" draws the music as glowing lines in a 3D space: left to right is time, up and down is pitch, near and far follows the direction of the melody, and thickness follows loudness.
+
+**Listen with the microphone:** draws one flying line live from any sound (singing, whistling, one note at a time on any instrument). It follows a single pitch, so chords confuse it, and it is not saved or made into a video.
+
+**Record what is on screen:** "Start recording" captures the picture live with sound until you press "Stop and save"; the file goes to Downloads. Use it for the microphone view, or to capture a playback exactly as you watch it. The title text is not included in these recordings. "Make the video" is still the better choice for a finished piece, because it draws every frame exactly.
+
+**Not built yet:** using a phone audio or video recording as the input, sheet-music view, artistic effects, other instruments.
+
 ## Backups
 
 The folder is the journal. Keep a copy of the whole folder (including `content/` and `media/`) on an external drive or private cloud storage.
@@ -83,6 +107,8 @@ Keep your original photos and videos too; the journal stores web-sized copies.
 | --- | --- |
 | `index.html`, `assets/` | The journal viewer |
 | `admin.html` | The editor page (works only through Start Editor) |
+| `studio.html`, `assets/js/studio.js`, `stage.js`, `midi.js`, `synth.js` | The piano studio |
+| `assets/vendor/` | Third-party code used by the studio: three.js (3D) and mp4-muxer (video files), both MIT licensed |
 | `tools/editor_server.py` | Small local program that lets the editor save files; listens only on this computer |
 | `content/starter.json` | The placeholder entries used once, when the journal is created |
 | `content/family.vault`, `content/parent.vault` | The locked entries (created by the editor) |
