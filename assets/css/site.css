@@ -165,3 +165,6 @@ body.studio .overlay { color: #fff6e0; letter-spacing: .01em; } body.studio .ove
 body.studio .btn.rec { background: #c2264a; border-color: #c2264a; color: #fff; }
 body.studio .lily { fill: #3a2a12; stroke: #e2b659; }
 body.studio h1 { background: linear-gradient(90deg, #f6eedd, #e2b659); -webkit-background-clip: text; background-clip: text; color: transparent; width: fit-content; }
+body.studio main { max-width: 1500px; }
+.stagebox:fullscreen { aspect-ratio: auto; border-radius: 0; border: 0; display: grid; place-items: center; background: #000; }
+.stagebox:fullscreen #stage { height: auto; }

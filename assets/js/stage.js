@@ -36,7 +36,7 @@ export function createStage(canvas) {
   renderer.localClippingEnabled = true;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
-  const camera = new THREE.PerspectiveCamera(34, 16 / 9, 0.5, 500);
+  const camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.5, 600);
   const env = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture;
   const composer = new THREE.EffectComposer(renderer);
   const renderPass = new THREE.RenderPass(new THREE.Scene(), camera);
@@ -80,8 +80,8 @@ export function createStage(canvas) {
     const half = Math.atan(Math.tan((camera.fov / 2) * Math.PI / 180) * camera.aspect);
     const dist = (width / 2) / Math.tan(half) * 1.03;
     S.cam = { cx, dist, width };
-    S.far = dist * 1.9;
-    scene.fog = new THREE.Fog(T.fog, dist * 0.95, dist * 2.25);
+    S.far = dist * 2.3;
+    scene.fog = new THREE.Fog(T.fog, dist * 1.1, dist * 3.2);
 
     scene.add(new THREE.AmbientLight('#ffffff', T.additive ? 0.12 : 0.7));
     const key = new THREE.DirectionalLight('#fff1dc', T.additive ? 1.15 : 1.3);
@@ -93,11 +93,29 @@ export function createStage(canvas) {
 
     // The lacquered deck the notes travel over. It is slightly see-through so dim mirror copies below read as reflections.
     const lacquer = new THREE.MeshPhysicalMaterial({ color: T.runway, roughness: 0.34, clearcoat: 0.5, clearcoatRoughness: 0.3, transparent: true, opacity: 1 - T.mirror, envMapIntensity: T.additive ? 0.5 : 1 });
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, S.far + 30), lacquer);
-    deck.position.set(0, DECK - 0.05, -(S.far + 30) / 2); deck.receiveShadow = true; deck.renderOrder = 1; scene.add(deck);
+    const deckLen = S.far * 0.62;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, deckLen), lacquer);
+    deck.position.set(0, DECK - 0.05, -deckLen / 2); deck.receiveShadow = true; deck.renderOrder = 1; scene.add(deck);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(60, 0.5, 0.25), new THREE.MeshStandardMaterial({ color: T.trim, metalness: 1, roughness: 0.3, emissive: T.trim, emissiveIntensity: 0.35 * T.glow }));
+    edge.position.set(0, DECK - 0.2, -deckLen); scene.add(edge);
+
+    // The hall around the piano: a polished floor far below, a back wall of light columns, and haze. These give the eye real distances to read.
+    const hall = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshPhysicalMaterial({ color: T.additive ? '#07060a' : '#e9dcd2', roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.2 }));
+    hall.rotation.x = -Math.PI / 2; hall.position.set(cx, -14, -120); hall.receiveShadow = true; scene.add(hall);
+    S.columns = [];
+    for (let i = -6; i <= 6; i++) {
+      const c = new THREE.Color(i % 2 ? T.trim : T.notes[Math.abs(i) % T.notes.length]);
+      const col = new THREE.Mesh(new THREE.BoxGeometry(1.1, 70, 0.6), new THREE.MeshBasicMaterial({ color: c, fog: false, transparent: true, opacity: 0.2, toneMapped: false }));
+      col.position.set(cx + i * width * 0.42, 20, -S.far * 1.9 - Math.abs(i) * 6);
+      scene.add(col); S.columns.push(col);
+    }
+    // Coloured light thrown by the notes being played, and ripples on the lacquer where they land.
+    S.flash = Array.from({ length: 4 }, () => { const l = new THREE.PointLight('#ffffff', 0, 26, 1.8); scene.add(l); return l; });
+    const ringGeo = new THREE.RingGeometry(0.42, 0.5, 40).rotateX(-Math.PI / 2);
+    S.rings = Array.from({ length: 28 }, () => { const r = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, blending: T.additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false, toneMapped: false })); r.visible = false; r.renderOrder = 3; scene.add(r); return r; });
     const gold = new THREE.MeshStandardMaterial({ color: T.trim, metalness: 1, roughness: 0.25, emissive: T.trim, emissiveIntensity: 0.12 * T.glow });
     for (let p = 24; p <= C8; p += 12) { // a fine inlay line at every C
-      const l = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.02, S.far + 30), gold); l.position.set(KX[p] - 0.5, DECK + 0.01, -(S.far + 30) / 2); l.renderOrder = 2; scene.add(l);
+      const l = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.02, deckLen), gold); l.position.set(KX[p] - 0.5, DECK + 0.01, -deckLen / 2); l.renderOrder = 2; scene.add(l);
     }
     S.strike = new THREE.Mesh(new THREE.BoxGeometry(60, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: T.trim, emissive: T.trim, emissiveIntensity: 1.6 * T.glow, metalness: 1, roughness: 0.3 }));
     S.strike.position.set(0, DECK + 0.05, -0.12); S.strike.renderOrder = 2; scene.add(S.strike);
@@ -192,8 +210,14 @@ export function createStage(canvas) {
     }
     const T = THEMES[S.theme], { cx, dist, width } = S.cam;
     const sway = S.motion ? 1 : 0;
-    camera.position.set(cx + Math.sin(t * 0.21) * width * 0.022 * sway, dist * 0.6 + Math.sin(t * 0.13 + 1) * dist * 0.012 * sway, dist * 0.7 + 5);
-    camera.lookAt(cx, 0, -dist * 0.2);
+    // how much is sounding right now (0..1): drives the room lights and a slight push of the camera toward the keys
+    let pulse = 0;
+    for (const it of S.items) { const age = t - it.n.onset; if (age >= 0 && age < 2.5) pulse += it.n.vel * Math.exp(-age / 0.55); }
+    pulse = Math.min(1, pulse * 0.3);
+    const push = 1 - 0.035 * pulse * sway;
+    camera.position.set(cx + Math.sin(t * 0.19) * width * 0.05 * sway, (dist * 0.47 + Math.sin(t * 0.13 + 1) * dist * 0.02 * sway) * push, (dist * 0.86 + 2) * push);
+    camera.lookAt(cx + Math.sin(t * 0.19) * width * 0.015 * sway, 0.3, -dist * 0.3);
+    S.columns.forEach((c, i) => { c.material.opacity = (T.additive ? 0.07 : 0.04) + (T.additive ? 0.45 : 0.2) * pulse * (0.55 + 0.45 * Math.sin(i * 1.7 + t * 0.9)); });
 
     // press[pitch] = how far down the key is (0..1), with its colour and loudness
     const press = new Map();
@@ -250,6 +274,21 @@ export function createStage(canvas) {
       b.visible = !!a && S.effects;
       if (b.visible) { b.material.color.copy(a.color); b.material.opacity = (T.additive ? 0.75 : 0.5) * a.a * (0.45 + 0.55 * a.vel); b.scale.set(isBlack(p) ? 0.9 : 1.3, 2.5 + 6 * a.vel, 1); }
     }
+    let ri = 0;
+    for (const it of S.effects ? S.items : []) {
+      const age = t - it.n.onset;
+      if (age < 0 || age > 0.8 || ri >= S.rings.length) continue;
+      const r = S.rings[ri++], k = age / 0.8, size = 1 + k * (5 + 7 * it.n.vel);
+      r.visible = true; r.position.set(KX[it.n.pitch], DECK + 0.02, -0.9 - k * 1.5); r.scale.set(size, 1, size * 1.5);
+      r.material.color.copy(it.color); r.material.opacity = (1 - k) ** 1.5 * (0.25 + 0.6 * it.n.vel);
+    }
+    for (; ri < S.rings.length; ri++) S.rings[ri].visible = false;
+    const lit = [...press].map(([p, a]) => ({ p, a, s: a.a * a.vel })).sort((x, y) => y.s - x.s);
+    S.flash.forEach((l, i) => {
+      const h = lit[i];
+      l.intensity = h ? (T.additive ? 26 : 10) * h.s : 0;
+      if (h) { l.color.copy(h.a.color); l.position.set(KX[h.p], 2.6, -1.2); }
+    });
     S.strike.material.emissiveIntensity = T.glow * (1.5 + Math.min(2, energy * 0.6));
     composer.render();
   }

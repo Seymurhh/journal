@@ -15,7 +15,7 @@ const say = (id, text) => { $('#' + id).textContent = text; };
 const mmss = (s) => { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 const safeName = () => (P.name || 'piano').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'piano';
 
-function fit() { if (P.busy) return; const w = Math.floor((canvas.clientWidth || 960) / 2) * 2; stage.resize(w, Math.round((w * 9) / 32) * 2); // even sizes keep video encoders happy }
+function fit() { if (P.busy) return; const w = Math.floor((canvas.clientWidth || 960) / 2) * 2; stage.resize(w, Math.round((w * 9) / 32) * 2); } // even sizes keep video encoders happy
 new ResizeObserver(fit).observe(canvas.parentElement);
 
 function load(piece, name) {
@@ -86,6 +86,8 @@ if (matchMedia('(prefers-reduced-motion: reduce)').matches) { ui.motion.checked 
 ui.theme.addEventListener('change', () => { stage.setTheme(ui.theme.value); showTitle(); });
 ui.vtitle.addEventListener('input', showTitle);
 ui.view.addEventListener('change', () => stage.setView(ui.view.value));
+$('#full').addEventListener('click', () => { const box = canvas.parentElement; if (document.fullscreenElement) document.exitFullscreen(); else (box.requestFullscreen || box.webkitRequestFullscreen).call(box); });
+document.addEventListener('fullscreenchange', () => setTimeout(fit, 60));
 
 // ---------- sources ----------
 ui.midifile.addEventListener('change', async () => {
