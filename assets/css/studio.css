@@ -99,3 +99,6 @@ select, input[type=text] { background: var(--raise); border: 1px solid var(--lin
 progress { width: 100%; height: 6px; accent-color: var(--accent); }
 video { width: 100%; border-radius: 10px; background: #000; }
 .credits { color: #5f5e69; font-size: .74rem; padding: 6px 22px 14px; text-align: center; }
+.seg.wrap { flex-wrap: wrap; } .seg.wrap button { flex: 1 1 30%; }
+.sub { display: grid; gap: 12px; }
+body.no-keys .keys-only { display: none; }

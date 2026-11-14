@@ -98,6 +98,8 @@ Each later update: `git add . && git commit -m "Update" && git push`.
 
 **Two views:** "Piano keys" shows notes travelling to a lit keyboard. "Flight lines" draws the music as glowing lines in a 3D space: left to right is time, up and down is pitch, near and far follows the direction of the melody, and thickness follows loudness.
 
+**Dancer:** under Look, Picture, choose "Dancer". A girl drawn only by her glowing outline (ponytail and skirt swing as she moves) dances to whatever the studio hears: press "Listen with the microphone" and play any music near the computer, or press Play on a piece, or play the piano. The studio finds the beat (it needs a few seconds) and picks one of four ways of moving: Flowing (no clear beat, or very calm), Swaying (a gentle steady beat), Groove (a clear beat with more going on) and Energetic (fast or busy). It does this by measuring the beat, the tempo and how many attacks there are each second; it does not recognise genres by name, so it can choose differently from what you expect. "Way of dancing" lets you choose yourself. The moves are formulas written for this studio, not recordings of a real dancer. To keep a video, use "Start filming" on the Video tab ("Make the video" cannot draw the dancer).
+
 **Listen with the microphone:** draws one flying line live from any sound (singing, whistling, one note at a time on any instrument). It follows a single pitch, so chords confuse it, and it is not saved or made into a video.
 
 **Film the screen live:** "Start filming" captures the picture live with sound until you press "Stop and save"; the file goes to Downloads. Use it for the microphone view, or to capture a playback exactly as you watch it. The title text is not included in these recordings. "Make the video" is still the better choice for a finished piece, because it draws every frame exactly.
@@ -123,7 +125,7 @@ Keep your original photos and videos too; the journal stores web-sized copies.
 | --- | --- |
 | `index.html`, `assets/` | The journal viewer |
 | `admin.html` | The editor page (works only through Start Editor) |
-| `studio.html`, `assets/css/studio.css`, `assets/js/studio.js`, `stage.js`, `flight.js`, `midi.js`, `synth.js` | The piano studio |
+| `studio.html`, `assets/css/studio.css`, `assets/js/studio.js`, `stage.js`, `flight.js`, `dancer.js`, `listen.js`, `midi.js`, `synth.js` | The piano studio |
 | `assets/sounds/` | Instrument recordings for the studio (see `CREDITS.txt` there) |
 | `assets/vendor/` | Third-party code used by the studio: three.js (3D) and mp4-muxer (video files), both MIT licensed |
 | `tools/editor_server.py` | Small local program that lets the editor save files; listens only on this computer |

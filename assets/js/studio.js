@@ -1,13 +1,14 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
 import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=7';
-import { createStage } from './stage.js?v=7';
+import { createStage } from './stage.js?v=9';
+import { createListener, STYLE_NAMES } from './listen.js?v=8';
 import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=7';
 
 const LEAD = 1.5, TAIL = 2.5; // seconds of runway before the first note and after the last
 const canvas = $('#stage'), box = $('#stagebox'), stage = createStage(canvas);
 const P = { piece: null, name: '', playing: false, pos: -LEAD, rate: 1, bus: null, t0: 0, p0: 0, next: 0, busy: false };
-const A = { ctx: null, out: null }; // sound: one audio context, and the chain every note passes through
+const A = { ctx: null, out: null, ear: null }; // sound: one audio context, and the chain every note passes through
 const V = { rec: null, chunks: [], dest: null }; // live screen recording
 const R = { on: false, events: [], start: 0 }; // recording of what is played
 const L = { access: null, inputs: [], held: new Map(), trail: [], voices: new Map(), sustained: [], pedal: false, last: -99 }; // live playing
@@ -20,9 +21,9 @@ const clock = () => performance.now() / 1000;
 const fill = (el) => el.style.setProperty('--fill', `${((el.value - el.min) / (el.max - el.min || 1)) * 100}%`);
 
 // ---------- choices are remembered on this computer ----------
-const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', camera: 'front', shape: 'wide', labels: true, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 2, dance: 'auto', camera: 'front', shape: 'wide', labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
 const C = { ...DEFAULTS };
-try { Object.assign(C, JSON.parse(localStorage.getItem('studio') || '{}')); } catch {}
+try { const saved = JSON.parse(localStorage.getItem('studio') || '{}'); if (saved.v !== 2) delete saved.labels; Object.assign(C, saved, { v: 2 }); } catch {} // v 2: note names are off unless switched on again
 const remember = () => { try { localStorage.setItem('studio', JSON.stringify(C)); } catch {} };
 
 function fit() { // even sizes keep video encoders happy
@@ -51,7 +52,7 @@ function load(piece, name) {
 
 // ---------- sound ----------
 function audio() {
-  if (!A.ctx) A.ctx = new AudioContext({ latencyHint: 'interactive' });
+  if (!A.ctx) { A.ctx = new AudioContext({ latencyHint: 'interactive' }); A.ear = createListener(A.ctx); } // the ear hears everything the studio plays, and the microphone
   if (A.ctx.state !== 'running') A.ctx.resume();
   if (!A.out) newOutput();
   return A.ctx;
@@ -64,6 +65,7 @@ function newOutput() {
   L.voices.clear(); L.sustained = [];
   A.out = makeOutput(A.ctx, { instrument: C.instrument, room: C.room, volume: C.volume });
   if (V.dest) A.out.tap.connect(V.dest);
+  A.out.tap.connect(A.ear.node);
   old?.close();
   if (was) play();
 }
@@ -145,8 +147,9 @@ function schedule() {
 function frame() {
   requestAnimationFrame(frame);
   if (P.busy) return;
-  if (M.on) { listen(); return; }
   const t = clock();
+  if (C.view === 'dancer') hear();
+  if (M.on) { listen(); return; }
   if (!P.playing && (R.on || L.held.size || t - L.last < 5)) { // someone is playing: show their notes leaving the keys
     while (L.trail.length && L.trail[0].t1 != null && t - L.trail[0].t1 > 30) L.trail.shift();
     stage.render(t, true);
@@ -180,14 +183,29 @@ radios($('#themes'), Object.entries(stage.themes()).map(([id, colors]) => ({ id,
   for (const c of colors.slice(0, 4)) { const i = document.createElement('i'); i.style.background = c; chips.append(i); }
   b.append(chips, label);
 } })), C.theme, (id) => { C.theme = id; remember(); stage.setTheme(id); accent(); });
-const setView = radios($('#views'), [], C.view, (v) => { C.view = v; remember(); stage.setView(v); });
+setInterval(() => { if (C.view === 'dancer' && A.ear && !P.busy) A.ear.update(clock()); }, 12); // listening keeps its own steady pace, apart from the picture
+function hear() { // dancer view: tell the stage what the music is doing, and say it in words
+  const F = A.ear ? A.ear.features : null;
+  stage.setMusic(F);
+  if (F?.active && $('#rec-msg').textContent.startsWith('The dancer is waiting')) say('rec-msg', '');
+  const style = C.dance === 'auto' ? F?.style : C.dance;
+  if (!L.held.size || !C.labels) ui.now.textContent = F?.active ? `${STYLE_NAMES[style]}${F.clear > 0.35 ? ` · ${Math.round(F.step)} beats a minute` : ''}` : '';
+}
+function pictureChanged() {
+  $('#dance-box').hidden = C.view !== 'dancer';
+  document.body.classList.toggle('no-keys', C.view !== 'piano');
+  if (C.view !== 'dancer') { stage.setMusic(null); if (!L.held.size) ui.now.textContent = ''; }
+  else if (!A.ctx) say('rec-msg', 'The dancer is waiting for music: press "Listen with the microphone", or Play, or play the piano.');
+}
+radios($('#views'), [], C.view, (v) => { C.view = v; remember(); stage.setView(M.on && v === 'piano' ? 'flight' : v); pictureChanged(); });
+radios($('#dances'), [], C.dance, (v) => { C.dance = v; remember(); stage.setDance(v); });
 radios($('#cameras'), [], C.camera, (v) => { C.camera = v; remember(); stage.setCamera(v); });
 radios($('#shapes'), [], C.shape, (v) => { C.shape = v; remember(); box.classList.toggle('tall', v === 'tall'); fit(); });
 for (const [k, fn] of [['labels', 'setLabels'], ['effects', 'setEffects'], ['motion', 'setMotion']]) {
   ui[k].checked = C[k]; stage[fn](C[k]);
   ui[k].addEventListener('change', () => { C[k] = ui[k].checked; remember(); stage[fn](C[k]); });
 }
-stage.setTheme(C.theme); stage.setView(C.view); stage.setCamera(C.camera); box.classList.toggle('tall', C.shape === 'tall'); accent();
+stage.setTheme(C.theme); stage.setView(C.view); stage.setDance(C.dance); pictureChanged(); stage.setCamera(C.camera); box.classList.toggle('tall', C.shape === 'tall'); accent();
 ui.vtitle.addEventListener('input', () => { ui.overlay.textContent = ui.vtitle.value; });
 $('#full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else (box.requestFullscreen || box.webkitRequestFullscreen).call(box); });
 document.addEventListener('fullscreenchange', () => setTimeout(fit, 60));
@@ -212,7 +230,7 @@ ui.midifile.addEventListener('change', async () => {
 ui.demo.addEventListener('click', () => { load(demoPiece(), 'Demo pattern'); play(); });
 
 // ---------- live playing: the piano over its USB cable (or the computer keyboard) ----------
-function showHeld() { ui.now.textContent = [...L.held.keys()].sort((a, b) => a - b).map(noteName).join('  '); }
+function showHeld() { ui.now.textContent = C.labels ? [...L.held.keys()].sort((a, b) => a - b).map(noteName).join('  ') : ''; }
 function liveOn(pitch, vel) {
   const t = clock();
   liveOff(pitch, true);
@@ -349,13 +367,14 @@ ui.mic.addEventListener('click', async () => {
   pause();
   audio(); await A.ctx.resume();
   M.node = A.ctx.createAnalyser(); M.node.fftSize = 2048;
-  M.src = A.ctx.createMediaStreamSource(M.stream); M.src.connect(M.node);
+  M.src = A.ctx.createMediaStreamSource(M.stream); M.src.connect(M.node); M.src.connect(A.ear.node);
   if (V.dest) M.src.connect(V.dest);
   M.pts = []; M.x = 0; M.last = null; M.start = performance.now(); M.on = true;
-  stage.setMic(M.pts); stage.setView('flight'); // the microphone always draws flight lines; the chosen picture comes back afterwards
+  stage.setMic(M.pts); if (C.view === 'piano') stage.setView('flight'); // the microphone draws flight lines, or moves the dancer; the piano picture comes back afterwards
   enable();
   ui.mic.textContent = 'Stop listening'; ui.mic.classList.add('on');
-  say('rec-msg', 'Listening. Sing, whistle or play one note at a time and watch the line fly. Nothing is recorded or sent anywhere.');
+  say('rec-msg', C.view === 'dancer' ? 'Listening. Play any music near the computer: after a few seconds the dancer finds the beat. Nothing is recorded or sent anywhere.'
+    : 'Listening. Sing, whistle or play one note at a time and watch the line fly. Nothing is recorded or sent anywhere.');
 });
 
 function download(bytes, type, name) {
@@ -404,6 +423,7 @@ async function pick(list, test) { for (const c of list) { try { if ((await test(
 
 async function makeVideo() {
   if (!P.piece || P.busy) return;
+  if (C.view === 'dancer') return say('exp-msg', 'The dancer reacts to sound as it happens, so it cannot be drawn frame by frame. Use "Start filming" below instead.');
   if (!('VideoEncoder' in window)) return say('exp-msg', 'This browser cannot make videos. Use Chrome or Edge on a computer.');
   pause();
   const short = Number(ui.size.value), long = short === 1080 ? 1920 : 1280, fps = Number(ui.fps.value);

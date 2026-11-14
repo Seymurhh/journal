@@ -3,6 +3,7 @@
 import * as THREE from '../vendor/three.min.js?v=7';
 import { isBlack, noteName } from './midi.js?v=7';
 import { buildFlight, voicesFromPiece } from './flight.js?v=7';
+import { buildDancer } from './dancer.js?v=9';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -64,6 +65,12 @@ export function createStage(canvas) {
 
   function build() {
     if (S.old) S.old.traverse((o) => { if (o.isSprite) return; o.geometry?.dispose(); if (o.material && !o.material.map) o.material.dispose(); });
+    if (S.view === 'dancer') {
+      S.dancer = buildDancer(THEMES[S.theme], { canvasTex, dot });
+      [bloom.strength, bloom.radius, bloom.threshold] = [0.7, 0.5, 0.3];
+      renderPass.scene = S.scene = S.old = S.dancer.scene;
+      return;
+    }
     if (S.view === 'flight') {
       S.flight = buildFlight(THEMES[S.theme], { canvasTex, dot });
       [bloom.strength, bloom.radius, bloom.threshold] = [0.55, 0.55, 0.5];
@@ -220,6 +227,7 @@ export function createStage(canvas) {
 
   function render(t, live = false) {
     if (!S.scene) build();
+    if (S.view === 'dancer') { S.dancer.render(camera, S.music, { effects: S.effects, motion: S.motion, style: S.dance }); composer.render(); return; }
     if (S.view === 'flight') {
       const src = S.mic ? S.mic.slice(-400) : S.piece ? S.piece.notes : [];
       let lo = 48, hi = 84;
@@ -277,8 +285,8 @@ export function createStage(canvas) {
       camera.position.set(cx + sx * width * 0.01, h * push, 4.5);
       camera.lookAt(cx + sx * width * 0.01, 0, 4.5 - h * 0.42);
     } else {
-      camera.position.set(cx + sx * width * 0.05, (dist * 0.47 + sy * dist * 0.02) * push, (dist * 0.86 + 2) * push);
-      camera.lookAt(cx + sx * width * 0.015, 0.3, -dist * 0.3);
+      camera.position.set(cx + sx * width * 0.05, (dist * 0.66 + sy * dist * 0.02) * push, (dist * 0.72 + 2) * push);
+      camera.lookAt(cx + sx * width * 0.015, 0.3, -dist * 0.24);
     }
     S.horizon.material.opacity = S.effects ? 0.02 + 0.1 * pulse : 0;
 
@@ -365,7 +373,10 @@ export function createStage(canvas) {
       camera.aspect = w / h; camera.updateProjectionMatrix(); S.scene = null;
     },
     setPiece(piece) { S.piece = piece; S.voices = piece ? voicesFromPiece(piece) : []; S.scene = null; },
-    setView(v) { S.view = v === 'flight' ? 'flight' : 'piano'; S.scene = null; },
+    setView(v) { S.view = ['flight', 'dancer'].includes(v) ? v : 'piano'; S.scene = null; },
+    setMusic(features) { S.music = features; },
+    dancer: () => S.dancer,
+    setDance(style) { S.dance = style; },
     setMic(points) { S.mic = points; },
     setLabels(on) { S.labels = on; },
     setEffects(on) { S.effects = on; },

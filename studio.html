@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Piano studio</title>
-<link rel="stylesheet" href="assets/css/studio.css?v=7">
+<link rel="stylesheet" href="assets/css/studio.css?v=8">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -74,9 +74,21 @@
       <div class="seg" id="views" role="radiogroup" aria-label="Picture">
         <button type="button" role="radio" data-v="piano" aria-checked="true">Piano keys</button>
         <button type="button" role="radio" data-v="flight" aria-checked="false">Flight lines</button>
+        <button type="button" role="radio" data-v="dancer" aria-checked="false">Dancer</button>
       </div>
-      <h2>Camera</h2>
-      <div class="seg" id="cameras" role="radiogroup" aria-label="Camera">
+      <div id="dance-box" class="sub" hidden>
+        <p class="fine">The dancer moves to whatever the studio hears: press "Listen with the microphone" and play music near the computer, or press Play, or play the piano.</p>
+        <h2>Way of dancing</h2>
+        <div class="seg wrap" id="dances" role="radiogroup" aria-label="Way of dancing">
+          <button type="button" role="radio" data-v="auto" aria-checked="true">Follow the music</button>
+          <button type="button" role="radio" data-v="flow" aria-checked="false">Flowing</button>
+          <button type="button" role="radio" data-v="sway" aria-checked="false">Swaying</button>
+          <button type="button" role="radio" data-v="groove" aria-checked="false">Groove</button>
+          <button type="button" role="radio" data-v="energy" aria-checked="false">Energetic</button>
+        </div>
+      </div>
+      <h2 class="keys-only">Camera</h2>
+      <div class="seg keys-only" id="cameras" role="radiogroup" aria-label="Camera">
         <button type="button" role="radio" data-v="front" aria-checked="true">Front</button>
         <button type="button" role="radio" data-v="side" aria-checked="false">Along the keys</button>
         <button type="button" role="radio" data-v="top" aria-checked="false">Above</button>
@@ -86,7 +98,7 @@
         <button type="button" role="radio" data-v="wide" aria-checked="true">Wide (TV, YouTube)</button>
         <button type="button" role="radio" data-v="tall" aria-checked="false">Tall (phone, Shorts)</button>
       </div>
-      <label class="check"><input type="checkbox" id="labels" checked><span>Show note names</span></label>
+      <label class="check"><input type="checkbox" id="labels"><span>Show note names</span></label>
       <label class="check"><input type="checkbox" id="effects" checked><span>Sparks, mist and light beams</span></label>
       <label class="check"><input type="checkbox" id="motion" checked><span>Gentle camera movement</span></label>
       <label class="field"><span>Title shown in the picture (optional)</span><input type="text" id="vtitle" maxlength="60"></label>
@@ -111,6 +123,6 @@
   </aside>
 </main>
 <footer class="credits">Grand piano recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Electric pianos and harpsichord: FluidR3 GM by Frank Wen.</footer>
-<script type="module" src="assets/js/studio.js?v=7"></script>
+<script type="module" src="assets/js/studio.js?v=9"></script>
 </body>
 </html>
