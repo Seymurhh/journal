@@ -1,8 +1,8 @@
 // "Flight" view: the music drawn as glowing lines flying through a 3D space, like the path of a bird's song.
 // Three axes: left-right = time (newest on the right), up-down = pitch, near-far = the direction the melody is moving
 // (rising swings toward you, falling swings away). Thickness and brightness = loudness.
-import * as THREE from '../vendor/three.min.js?v=5';
-import { noteName } from './midi.js?v=5';
+import * as THREE from '../vendor/three.min.js?v=7';
+import { noteName } from './midi.js?v=7';
 
 const N = 360, TRAIL = 7, HEADX = 6.5, XS = 2.75, ZS = 3.4, SWING = 0.75, MAXV = 3; // the newest sound is at HEADX; older sound drifts left and away
 const smooth = (u) => { u = Math.min(1, Math.max(0, u)); return u * u * (3 - 2 * u); };

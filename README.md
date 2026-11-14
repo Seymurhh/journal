@@ -80,15 +80,19 @@ Each later update: `git add . && git commit -m "Update" && git push`.
 
 `studio.html` turns a piano performance into a 3D view (notes travelling to a keyboard that lights up) and can make an MP4 video. It runs entirely in the browser; nothing is uploaded.
 
-**Recording her playing (Yamaha digital piano)**
+**Playing live and recording (Yamaha digital piano)**
 
 1. Connect a USB A-to-B cable ("printer cable") from the piano's USB TO HOST port to the computer. A Mac with only USB-C ports needs a USB-C adapter or a USB-C to USB-B cable.
 2. Open the studio in Chrome or Edge (Safari cannot talk to MIDI devices): start the editor and go to `http://127.0.0.1:8321/studio.html`, or use the live site.
-3. Press **Record from the piano** and allow MIDI access when the browser asks. Keys light up on screen as she plays.
-4. Press **Stop recording**, then **Play** to watch it.
-5. Press **Save as MIDI file** to keep it. You can film with the phone at the same time; the two are separate files.
+3. Press **Connect the piano** (top right) and allow MIDI access when the browser asks. The button then shows the piano's name. After the first time it connects by itself.
+4. Play. Keys light up, each note leaves its key as a glowing bar, and the computer plays the instrument chosen under **Sound**. Turn the piano's own volume down to hear only that sound, or untick "Play this sound while she plays" to hear only the piano.
+5. To keep a performance press **Record**, play, then **Stop**. Press Play to watch it and **Save as MIDI file** to keep it.
 
-**Making a video:** choose size and smoothness, press **Make the video**, wait for the bar, then **Save the video**. Keep the tab in front while it works. The sound is a synthesized piano, not the room recording.
+**Sound:** eight instruments. Concert Grand is a real Yamaha C5 grand recorded note by note (Salamander Grand Piano); Bright Grand, Soft Felt and Honky-tonk Upright are made from those recordings. Electric Grand, Electric Piano and Harpsichord come from the FluidR3 sound set. Simple Synth needs no files. "Room" adds the echo of a room or a concert hall. The sound files are in `assets/sounds/` (about 5.7 MB; credits in `CREDITS.txt` there) and an instrument is downloaded the first time it is chosen.
+
+**Look:** five colour sets (Aurora and Ember are the dark neon ones), three cameras (Front, Along the keys, Above) and two shapes (Wide for TV and YouTube, Tall for phones and Shorts). The choices are remembered on this computer.
+
+**Making a video:** on the Video tab choose size and smoothness, press **Make the video**, wait for the bar, then **Save the video**. Keep the tab in front while it works. The video uses the chosen instrument, room, colours, camera and shape. Its sound is the studio's instrument, not the room recording.
 
 **Putting it in the journal:** in the editor, attach the `.mid` file (and the video if you like) to a Music entry. Family members then get a **Watch in the piano studio** button on that entry.
 
@@ -96,9 +100,9 @@ Each later update: `git add . && git commit -m "Update" && git push`.
 
 **Listen with the microphone:** draws one flying line live from any sound (singing, whistling, one note at a time on any instrument). It follows a single pitch, so chords confuse it, and it is not saved or made into a video.
 
-**Record what is on screen:** "Start recording" captures the picture live with sound until you press "Stop and save"; the file goes to Downloads. Use it for the microphone view, or to capture a playback exactly as you watch it. The title text is not included in these recordings. "Make the video" is still the better choice for a finished piece, because it draws every frame exactly.
+**Film the screen live:** "Start filming" captures the picture live with sound until you press "Stop and save"; the file goes to Downloads. Use it for the microphone view, or to capture a playback exactly as you watch it. The title text is not included in these recordings. "Make the video" is still the better choice for a finished piece, because it draws every frame exactly.
 
-**Not built yet:** using a phone audio or video recording as the input, sheet-music view, artistic effects, other instruments.
+**Not built yet:** using a phone audio or video recording as the input, sheet-music view.
 
 ## Backups
 
@@ -119,7 +123,8 @@ Keep your original photos and videos too; the journal stores web-sized copies.
 | --- | --- |
 | `index.html`, `assets/` | The journal viewer |
 | `admin.html` | The editor page (works only through Start Editor) |
-| `studio.html`, `assets/js/studio.js`, `stage.js`, `midi.js`, `synth.js` | The piano studio |
+| `studio.html`, `assets/css/studio.css`, `assets/js/studio.js`, `stage.js`, `flight.js`, `midi.js`, `synth.js` | The piano studio |
+| `assets/sounds/` | Instrument recordings for the studio (see `CREDITS.txt` there) |
 | `assets/vendor/` | Third-party code used by the studio: three.js (3D) and mp4-muxer (video files), both MIT licensed |
 | `tools/editor_server.py` | Small local program that lets the editor save files; listens only on this computer |
 | `content/starter.json` | The placeholder entries used once, when the journal is created |

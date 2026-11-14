@@ -1,10 +1,14 @@
 // The 3D scene: a lacquered piano with jewel-coloured notes travelling toward the keys they play.
 // Everything is a pure function of the music time t, so a video export draws exactly what playback shows.
-import * as THREE from '../vendor/three.min.js?v=5';
-import { isBlack, noteName } from './midi.js?v=5';
-import { buildFlight, voicesFromPiece } from './flight.js?v=5';
+import * as THREE from '../vendor/three.min.js?v=7';
+import { isBlack, noteName } from './midi.js?v=7';
+import { buildFlight, voicesFromPiece } from './flight.js?v=7';
 
 const THEMES = {
+  aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
+    notes: ['#2f9bff', '#30f0d0', '#b57bff', '#ffd45a'], label: '#f2f9ff', glow: 0.72, bloom: [0.62, 0.6, 0.82], additive: true, mirror: 0.3, outline: true, env: 0.07 },
+  ember: { bg: ['#000000', '#0a0204'], fog: '#030001', runway: '#040203', trim: '#ffb24a', led: '#ff8a2a', ledLight: 1.1, dim: 0.3, felt: '#3a0d10', white: '#f6efe8', black: '#070505',
+    notes: ['#ff4fa3', '#ffc23d', '#8f7bff', '#4fe0ff'], label: '#fff6ee', glow: 0.72, bloom: [0.62, 0.6, 0.82], additive: true, mirror: 0.3, outline: true, env: 0.07 },
   noir: { bg: ['#020203', '#1a0d10'], fog: '#0a0608', runway: '#050507', trim: '#e2b659', felt: '#8a1228', white: '#f7f1e6', black: '#0a0a0c',
     notes: ['#ffc24d', '#ff4f86', '#2fe3b0', '#5b9bff'], label: '#170a05', glow: 1.0, bloom: [0.5, 0.5, 0.92], additive: true, mirror: 0.2 },
   jewel: { bg: ['#03061a', '#1c0a33'], fog: '#0a0820', runway: '#050818', trim: '#f0d07a', felt: '#5d1a78', white: '#f4f1fb', black: '#0a0b16',
@@ -46,7 +50,7 @@ export function createStage(canvas) {
   const clip = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]; // hide the part of a note that has passed the keys
   const dot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const beamTex = canvasTex(32, 128, (g, w, h) => { const r = g.createLinearGradient(0, h, 0, 0); r.addColorStop(0, 'rgba(255,255,255,.95)'); r.addColorStop(0.25, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  const S = { theme: 'noir', labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
+  const S = { theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
   const labelMats = new Map();
 
   function labelMaterial(pitch, T) {
@@ -68,7 +72,7 @@ export function createStage(canvas) {
     }
     const T = THEMES[S.theme], scene = new THREE.Scene();
     scene.background = canvasTex(4, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, T.bg[0]); r.addColorStop(1, T.bg[1]); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-    scene.environment = env; scene.environmentIntensity = T.additive ? 0.22 : 0.6;
+    scene.environment = env; scene.environmentIntensity = T.env ?? 0.22;
     [bloom.strength, bloom.radius, bloom.threshold] = T.bloom;
 
     // Frame the part of the keyboard the piece uses (at least three octaves), so the notes are large.
@@ -79,12 +83,14 @@ export function createStage(canvas) {
     const x0 = KX[lo] - 1, x1 = KX[hi] + 1, width = x1 - x0, cx = (x0 + x1) / 2;
     const half = Math.atan(Math.tan((camera.fov / 2) * Math.PI / 180) * camera.aspect);
     const dist = (width / 2) / Math.tan(half) * 1.03;
-    S.cam = { cx, dist, width };
-    S.far = dist * 2.3;
-    scene.fog = new THREE.Fog(T.fog, dist * 1.1, dist * 3.2);
+    const ref = width * 0.77; // sizes of the runway and the haze do not depend on the picture shape or the camera
+    S.cam = { cx, dist, width, x0, ref };
+    S.far = ref * 2.3;
+    scene.fog = new THREE.Fog(T.fog, ref * 1.1, ref * 3.4);
+    const led = T.led || T.trim;
 
-    scene.add(new THREE.AmbientLight('#ffffff', T.additive ? 0.12 : 0.7));
-    const key = new THREE.DirectionalLight('#fff1dc', T.additive ? 1.15 : 1.3);
+    scene.add(new THREE.AmbientLight('#ffffff', 0.12 * (T.dim || 1)));
+    const key = new THREE.DirectionalLight('#fff1dc', 1.15 * (T.dim || 1));
     key.position.set(cx - 12, 38, 22); key.target.position.set(cx, 0, -6);
     key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0005; key.shadow.radius = 4;
     Object.assign(key.shadow.camera, { left: -width / 2 - 6, right: width / 2 + 6, top: 30, bottom: -30, near: 1, far: 140 });
@@ -102,13 +108,10 @@ export function createStage(canvas) {
     // The hall around the piano: a polished floor far below, a back wall of light columns, and haze. These give the eye real distances to read.
     const hall = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshPhysicalMaterial({ color: T.additive ? '#07060a' : '#e9dcd2', roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.2 }));
     hall.rotation.x = -Math.PI / 2; hall.position.set(cx, -14, -120); hall.receiveShadow = true; scene.add(hall);
-    S.columns = [];
-    for (let i = -6; i <= 6; i++) {
-      const c = new THREE.Color(i % 2 ? T.trim : T.notes[Math.abs(i) % T.notes.length]);
-      const col = new THREE.Mesh(new THREE.BoxGeometry(1.1, 70, 0.6), new THREE.MeshBasicMaterial({ color: c, fog: false, transparent: true, opacity: 0.2, toneMapped: false }));
-      col.position.set(cx + i * width * 0.42, 20, -S.far * 1.9 - Math.abs(i) * 6);
-      scene.add(col); S.columns.push(col);
-    }
+    S.horizon = new THREE.Mesh(new THREE.PlaneGeometry(width * 3.2, width * 0.9), new THREE.MeshBasicMaterial({ map: dot, color: T.notes[0], fog: false, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    S.horizon.position.set(cx, 4, -S.far * 1.15); scene.add(S.horizon);
+    // The light strip along the back of the keys, and the light it throws on them.
+    for (const dx of [-0.36, 0, 0.36]) { const l = new THREE.PointLight(led, T.ledLight || 0.5, width * 0.5, 1.6); l.position.set(cx + dx * width, 2.2, -0.9); scene.add(l); }
     // Coloured light thrown by the notes being played, and ripples on the lacquer where they land.
     S.flash = Array.from({ length: 4 }, () => { const l = new THREE.PointLight('#ffffff', 0, 26, 1.8); scene.add(l); return l; });
     const ringGeo = new THREE.RingGeometry(0.42, 0.5, 40).rotateX(-Math.PI / 2);
@@ -117,8 +120,8 @@ export function createStage(canvas) {
     for (let p = 24; p <= C8; p += 12) { // a fine inlay line at every C
       const l = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.02, deckLen), gold); l.position.set(KX[p] - 0.5, DECK + 0.01, -deckLen / 2); l.renderOrder = 2; scene.add(l);
     }
-    S.strike = new THREE.Mesh(new THREE.BoxGeometry(60, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: T.trim, emissive: T.trim, emissiveIntensity: 1.6 * T.glow, metalness: 1, roughness: 0.3 }));
-    S.strike.position.set(0, DECK + 0.05, -0.12); S.strike.renderOrder = 2; scene.add(S.strike);
+    S.strike = new THREE.Mesh(new THREE.BoxGeometry(60, T.outline ? 0.16 : 0.07, T.outline ? 0.2 : 0.1), new THREE.MeshStandardMaterial({ color: led, emissive: led, emissiveIntensity: 1.6 * T.glow, metalness: 0.6, roughness: 0.3 }));
+    S.strike.position.set(0, DECK + (T.outline ? 0.1 : 0.05), -0.14); S.strike.renderOrder = 2; scene.add(S.strike);
     const felt = new THREE.Mesh(new THREE.BoxGeometry(60, 0.5, 0.22), new THREE.MeshStandardMaterial({ color: T.felt, roughness: 1 }));
     felt.position.set(0, DECK + 0.1, 0.02); scene.add(felt);
     const body = new THREE.MeshPhysicalMaterial({ color: T.additive ? '#060607' : '#2a1d20', roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.06 });
@@ -167,17 +170,34 @@ export function createStage(canvas) {
       if (!geos.has(k)) geos.set(k, new THREE.RoundedBoxGeometry(w, 0.5, Number(len.toFixed(1)), 2, Math.min(0.16, w / 2.5, len / 2.5)));
       return geos.get(k);
     };
+    const coreMats = new Map();
+    const coreMat = (ci) => { if (!coreMats.has(ci)) coreMats.set(ci, new THREE.MeshBasicMaterial({ color: new THREE.Color(T.notes[ci % T.notes.length]).multiplyScalar(0.1), clippingPlanes: clip })); return coreMats.get(ci); };
+    const oneTrack = !S.piece || S.piece.tracks === 1;
+    const colorIndex = (n) => (oneTrack ? (n.pitch < 60 ? 1 : 0) : n.track); // one track (a recording): lower and upper halves get their own colour
+    S.colorOf = (pitch) => new THREE.Color(T.notes[(pitch < 60 ? 1 : 0) % T.notes.length]);
     (S.piece ? S.piece.notes : []).forEach((n, idx) => {
       if (n.pitch < A0 || n.pitch > C8) return;
       const level = Math.min(3, Math.floor(n.vel * 4)), black = isBlack(n.pitch);
       const len = Math.max(0.4, n.dur * SPEED - 0.1);
       // Louder notes are wider and brighter, so loudness never depends on colour alone.
       const w = (black ? 0.5 : 0.8) * (0.6 + 0.4 * n.vel), geo = noteGeo(w, len), y = black ? 1.75 : 1.2;
-      const mesh = new THREE.Mesh(geo, noteMat(n.track, level, false)); mesh.castShadow = true;
-      const twin = new THREE.Mesh(geo, noteMat(n.track, level, true));
+      const ci = colorIndex(n);
+      const mesh = new THREE.Mesh(geo, noteMat(ci, level, false)); mesh.castShadow = true;
+      const twin = new THREE.Mesh(geo, noteMat(ci, level, true));
+      if (T.outline && len > 0.55) { const core = new THREE.Mesh(noteGeo(w * 0.56, len - 0.3), coreMat(ci)); core.position.y = 0.035; mesh.add(core); }
       const sprite = new THREE.Sprite(labelMaterial(n.pitch, T)); sprite.scale.set(1.9, 0.95, 1); sprite.renderOrder = 6;
       scene.add(mesh, twin, sprite);
-      S.items.push({ n, idx, mesh, twin, sprite, len, y, color: new THREE.Color(T.notes[n.track % T.notes.length]) });
+      S.items.push({ n, idx, mesh, twin, sprite, len, y, color: new THREE.Color(T.notes[ci % T.notes.length]) });
+    });
+    // Bars for notes played live: they leave the key when it is pressed and travel away over the deck.
+    const unit = new THREE.RoundedBoxGeometry(1, 0.5, 1, 2, 0.12);
+    S.pool = Array.from({ length: 140 }, () => {
+      const mesh = new THREE.Mesh(unit, new THREE.MeshPhysicalMaterial({ color: '#ffffff', emissive: '#ffffff', emissiveIntensity: T.glow, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1, clippingPlanes: clip }));
+      const twin = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ color: '#ffffff', clippingPlanes: clip }));
+      const core = T.outline ? new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ color: '#000000', clippingPlanes: clip })) : null;
+      if (core) { core.position.y = 0.035; mesh.add(core); }
+      mesh.visible = twin.visible = false; scene.add(mesh, twin);
+      return { mesh, twin, core };
     });
 
     // Sparks thrown up when a note lands, and slow dust in the light.
@@ -191,13 +211,14 @@ export function createStage(canvas) {
     };
     S.sparks = mkPoints(2400, 0.34, 1);
     S.dust = mkPoints(140, 0.22, T.additive ? 0.5 : 0.35);
+    S.mist = mkPoints(1600, 0.7, 0.05);
     S.defaultColor = new THREE.Color(T.notes[0]);
     S.trimColor = new THREE.Color(T.trim);
     renderPass.scene = scene;
     S.scene = S.old = scene;
   }
 
-  function render(t) {
+  function render(t, live = false) {
     if (!S.scene) build();
     if (S.view === 'flight') {
       const src = S.mic ? S.mic.slice(-400) : S.piece ? S.piece.notes : [];
@@ -208,25 +229,14 @@ export function createStage(canvas) {
       composer.render();
       return;
     }
-    const T = THEMES[S.theme], { cx, dist, width } = S.cam;
-    const sway = S.motion ? 1 : 0;
-    // how much is sounding right now (0..1): drives the room lights and a slight push of the camera toward the keys
-    let pulse = 0;
-    for (const it of S.items) { const age = t - it.n.onset; if (age >= 0 && age < 2.5) pulse += it.n.vel * Math.exp(-age / 0.55); }
-    pulse = Math.min(1, pulse * 0.3);
-    const push = 1 - 0.035 * pulse * sway;
-    camera.position.set(cx + Math.sin(t * 0.19) * width * 0.05 * sway, (dist * 0.47 + Math.sin(t * 0.13 + 1) * dist * 0.02 * sway) * push, (dist * 0.86 + 2) * push);
-    camera.lookAt(cx + Math.sin(t * 0.19) * width * 0.015 * sway, 0.3, -dist * 0.3);
-    S.columns.forEach((c, i) => { c.material.opacity = (T.additive ? 0.07 : 0.04) + (T.additive ? 0.45 : 0.2) * pulse * (0.55 + 0.45 * Math.sin(i * 1.7 + t * 0.9)); });
-
-    // press[pitch] = how far down the key is (0..1), with its colour and loudness
-    const press = new Map();
-    for (const [p, v] of S.live) press.set(p, { a: 1, vel: v.vel, color: S.defaultColor });
-    const span = S.far / SPEED, sp = S.sparks.geometry.attributes;
-    let used = 0, energy = 0;
+    const T = THEMES[S.theme], { cx, dist, width, x0, ref } = S.cam;
+    const sway = S.motion ? 1 : 0, trail = live ? S.trail || [] : [];
+    // fx = every note that matters right now (from the piece, or played live), in one shape for the keys and the effects
+    const fx = [];
+    const span = S.far / SPEED;
     for (const it of S.items) {
       const { n, mesh, twin, sprite, len, y } = it, ahead = n.onset - t, off = n.onset + n.dur;
-      const show = ahead < span && off > t - 0.05;
+      const show = !live && ahead < span && off > t - 0.05;
       mesh.visible = twin.visible = show;
       sprite.visible = show && S.labels && ahead > 0.02;
       if (show) {
@@ -235,31 +245,85 @@ export function createStage(canvas) {
         twin.position.set(KX[n.pitch], 2 * DECK - y, z);
         if (sprite.visible) sprite.position.set(KX[n.pitch], y + 0.95, -(ahead * SPEED + 0.6));
       }
-      if (ahead <= 0 && t < off + 0.1) {
-        const a = clamp01(-ahead / 0.035) * (1 - clamp01((t - off) / 0.1)), old = press.get(n.pitch);
-        if (!old || a > old.a) press.set(n.pitch, { a, vel: n.vel, color: it.color });
-        energy += n.vel * a;
+      if (!live && ahead <= 0 && t < off + 2.5) fx.push({ pitch: n.pitch, vel: n.vel, onset: n.onset, off, idx: it.idx, color: it.color });
+    }
+    let used = 0;
+    for (let i = trail.length - 1; i >= 0; i--) {
+      const n = trail[i];
+      if (n.pitch < A0 || n.pitch > C8) continue;
+      const end = n.t1 ?? t, near = (t - end) * SPEED, far = (t - n.t0) * SPEED, color = S.colorOf(n.pitch);
+      if (t - end < 2.5 || n.t1 == null) fx.push({ pitch: n.pitch, vel: n.vel, onset: n.t0, off: n.t1 ?? Infinity, idx: i + (n.t0 * 100 | 0), color });
+      if (near > S.far || used >= S.pool.length || far - near < 0.05) continue;
+      const q = S.pool[used++], black = isBlack(n.pitch), len = far - near, w = (black ? 0.5 : 0.8) * (0.6 + 0.4 * n.vel), y = black ? 1.75 : 1.2, z = -(near + len / 2 + 0.3);
+      q.mesh.visible = q.twin.visible = true;
+      q.mesh.scale.set(w, 1, len); q.twin.scale.set(w, 1, len);
+      q.mesh.position.set(KX[n.pitch], y, z); q.twin.position.set(KX[n.pitch], 2 * DECK - y, z);
+      q.mesh.material.color.copy(color); q.mesh.material.emissive.copy(color); q.mesh.material.emissiveIntensity = T.glow * (0.7 + 0.5 * n.vel);
+      q.twin.material.color.copy(color).multiplyScalar(0.5);
+      if (q.core) { q.core.visible = len > 0.7; q.core.scale.set(0.56, 1, Math.max(0.05, (len - 0.34) / len)); q.core.material.color.copy(color).multiplyScalar(0.1); }
+    }
+    for (let i = used; i < S.pool.length; i++) S.pool[i].mesh.visible = S.pool[i].twin.visible = false;
+
+    // how much is sounding right now (0..1): drives the room light and a slight push of the camera toward the keys
+    let pulse = 0;
+    for (const f of fx) { const age = t - f.onset; if (age >= 0 && age < 2.5) pulse += f.vel * Math.exp(-age / 0.55); }
+    pulse = Math.min(1, pulse * 0.3);
+    const push = 1 - 0.035 * pulse * sway, sx = Math.sin(t * 0.19) * sway, sy = Math.sin(t * 0.13 + 1) * sway;
+    if (S.camera === 'side') { // from beyond the low notes, looking along the keyboard: the notes arrive from the left
+      camera.position.set(x0 - width * (0.3 - 0.012 * sx), width * (0.36 + 0.008 * sy) * push, width * (0.2 + 0.01 * sx));
+      camera.lookAt(cx - width * 0.08, 0, -width * 0.12);
+    } else if (S.camera === 'top') { // straight down, like sheet music scrolling toward the player
+      const h = dist * 1.02;
+      camera.position.set(cx + sx * width * 0.01, h * push, 4.5);
+      camera.lookAt(cx + sx * width * 0.01, 0, 4.5 - h * 0.42);
+    } else {
+      camera.position.set(cx + sx * width * 0.05, (dist * 0.47 + sy * dist * 0.02) * push, (dist * 0.86 + 2) * push);
+      camera.lookAt(cx + sx * width * 0.015, 0.3, -dist * 0.3);
+    }
+    S.horizon.material.opacity = S.effects ? 0.02 + 0.1 * pulse : 0;
+
+    // press[pitch] = how far down the key is (0..1), with its colour and loudness
+    const press = new Map();
+    for (const [p, v] of S.live) press.set(p, { a: 1, vel: v.vel, color: S.colorOf(p) });
+    const sp = S.sparks.geometry.attributes, mp = S.mist.geometry.attributes;
+    let energy = 0, mused = 0;
+    used = 0;
+    for (const f of fx) {
+      const age = t - f.onset;
+      if (t < f.off + 0.1) {
+        const a = clamp01(age / 0.035) * (1 - clamp01((t - f.off) / 0.1)), old = press.get(f.pitch);
+        if (!old || a > old.a) press.set(f.pitch, { a, vel: f.vel, color: f.color });
+        energy += f.vel * a;
       }
-      const age = -ahead;
-      if (S.effects && age >= 0 && age < 0.9) { // sparks: same arc every time for the same note
-        const count = Math.round(5 + 12 * n.vel), fade = (1 - age / 0.9) ** 1.5;
+      if (!S.effects) continue;
+      if (age < 0.9) { // sparks: same arc every time for the same note
+        const count = Math.round(5 + 12 * f.vel), fade = (1 - age / 0.9) ** 1.5;
         for (let j = 0; j < count && used < 2400; j++, used++) {
-          const vx = (rnd(it.idx, j) - 0.5) * 3.2, vy = (2.2 + 4.5 * rnd(it.idx, j + 50)) * (0.5 + n.vel), vz = -rnd(it.idx, j + 99) * 2.4;
-          sp.position.setXYZ(used, KX[n.pitch] + vx * age, DECK + 0.4 + vy * age - 4.2 * age * age, -0.2 + vz * age);
-          const warm = j % 3 === 0 ? S.trimColor : it.color;
+          const vx = (rnd(f.idx, j) - 0.5) * 3.2, vy = (2.2 + 4.5 * rnd(f.idx, j + 50)) * (0.5 + f.vel), vz = -rnd(f.idx, j + 99) * 2.4;
+          sp.position.setXYZ(used, KX[f.pitch] + vx * age, DECK + 0.4 + vy * age - 4.2 * age * age, -0.2 + vz * age);
+          const warm = j % 3 === 0 ? S.trimColor : f.color;
           sp.color.setXYZ(used, warm.r * fade, warm.g * fade, warm.b * fade);
         }
+      }
+      // mist: while a note is held, soft light keeps rising where it meets the keys
+      const STEP = 0.07, LIFE = 1.5, last = Math.floor((Math.min(t, f.off) - f.onset) / STEP);
+      for (let j = Math.max(0, Math.ceil((t - LIFE - f.onset) / STEP)); j <= last && mused < 1600; j++, mused++) {
+        const a = t - (f.onset + j * STEP), k = a / LIFE, fade = (1 - k) ** 2 * Math.min(1, a / 0.08) * (0.35 + 0.65 * f.vel);
+        mp.position.setXYZ(mused, KX[f.pitch] + (rnd(f.idx, j) - 0.5) * (0.7 + 2.4 * k), DECK + 0.5 + a * (0.9 + 1.6 * rnd(f.idx, j + 31)), -0.5 - rnd(f.idx, j + 77) * 1.4 - a * 1.1);
+        mp.color.setXYZ(mused, f.color.r * fade, f.color.g * fade, f.color.b * fade);
       }
     }
     S.sparks.geometry.setDrawRange(0, used); sp.position.needsUpdate = true; sp.color.needsUpdate = true;
     S.sparks.visible = used > 0;
+    S.mist.geometry.setDrawRange(0, mused); mp.position.needsUpdate = true; mp.color.needsUpdate = true;
+    S.mist.visible = mused > 0;
 
     const dp = S.dust.geometry.attributes;
     S.dust.visible = S.effects;
     for (let i = 0; i < 140 && S.effects; i++) {
       const d = 0.25 + 0.2 * rnd(i, 7);
       dp.position.setXYZ(i, cx + (rnd(i, 1) - 0.5) * width * 1.3 + Math.sin(t * 0.11 + i) * 0.8,
-        1.5 + rnd(i, 2) * dist * 0.35 + Math.sin(t * 0.17 + i * 2.1) * 0.5, -rnd(i, 3) * S.far * 0.75);
+        1.5 + rnd(i, 2) * ref * 0.35 + Math.sin(t * 0.17 + i * 2.1) * 0.5, -rnd(i, 3) * S.far * 0.75);
       dp.color.setXYZ(i, S.trimColor.r * d, S.trimColor.g * d, S.trimColor.b * d);
     }
     dp.position.needsUpdate = true; dp.color.needsUpdate = true;
@@ -268,25 +332,25 @@ export function createStage(canvas) {
       const k = S.keys[p], b = S.beams[p], a = press.get(p);
       k.rotation.x = a ? k.userData.max * a.a : 0;
       if (a) {
-        k.material.emissive.copy(a.color); k.material.emissiveIntensity = T.glow * (0.7 + 1.1 * a.vel) * a.a + (T.additive ? 0 : 0.25 * a.a);
+        k.material.emissive.copy(a.color); k.material.emissiveIntensity = T.glow * (0.7 + 1.1 * a.vel) * a.a;
         k.material.color.copy(k.userData.base).lerp(a.color, 0.55 * a.a);
       } else { k.material.emissiveIntensity = 0; k.material.color.copy(k.userData.base); }
       b.visible = !!a && S.effects;
-      if (b.visible) { b.material.color.copy(a.color); b.material.opacity = (T.additive ? 0.75 : 0.5) * a.a * (0.45 + 0.55 * a.vel); b.scale.set(isBlack(p) ? 0.9 : 1.3, 2.5 + 6 * a.vel, 1); }
+      if (b.visible) { b.material.color.copy(a.color); b.material.opacity = (T.dim ? 0.3 : 0.75) * a.a * (0.45 + 0.55 * a.vel); b.scale.set(isBlack(p) ? 0.9 : 1.3, 2.5 + 6 * a.vel, 1); b.rotation.y = S.camera === 'side' ? -1.1 : 0; }
     }
     let ri = 0;
-    for (const it of S.effects ? S.items : []) {
-      const age = t - it.n.onset;
+    for (const f of S.effects ? fx : []) {
+      const age = t - f.onset;
       if (age < 0 || age > 0.8 || ri >= S.rings.length) continue;
-      const r = S.rings[ri++], k = age / 0.8, size = 1 + k * (5 + 7 * it.n.vel);
-      r.visible = true; r.position.set(KX[it.n.pitch], DECK + 0.02, -0.9 - k * 1.5); r.scale.set(size, 1, size * 1.5);
-      r.material.color.copy(it.color); r.material.opacity = (1 - k) ** 1.5 * (0.25 + 0.6 * it.n.vel);
+      const r = S.rings[ri++], k = age / 0.8, size = 1 + k * (5 + 7 * f.vel);
+      r.visible = true; r.position.set(KX[f.pitch], DECK + 0.02, -0.9 - k * 1.5); r.scale.set(size, 1, size * 1.5);
+      r.material.color.copy(f.color); r.material.opacity = (1 - k) ** 1.5 * (0.25 + 0.6 * f.vel) * (T.dim ? 0.6 : 1);
     }
     for (; ri < S.rings.length; ri++) S.rings[ri].visible = false;
     const lit = [...press].map(([p, a]) => ({ p, a, s: a.a * a.vel })).sort((x, y) => y.s - x.s);
     S.flash.forEach((l, i) => {
       const h = lit[i];
-      l.intensity = h ? (T.additive ? 26 : 10) * h.s : 0;
+      l.intensity = h ? (T.dim ? 9 : 26) * h.s : 0;
       if (h) { l.color.copy(h.a.color); l.position.set(KX[h.p], 2.6, -1.2); }
     });
     S.strike.material.emissiveIntensity = T.glow * (1.5 + Math.min(2, energy * 0.6));
@@ -306,8 +370,11 @@ export function createStage(canvas) {
     setLabels(on) { S.labels = on; },
     setEffects(on) { S.effects = on; },
     setMotion(on) { S.motion = on; },
-    setTheme(name) { S.theme = THEMES[name] ? name : 'noir'; S.scene = null; },
+    setTheme(name) { S.theme = THEMES[name] ? name : 'aurora'; S.scene = null; },
     setLive(map) { S.live = map; },
-    isLight: () => !THEMES[S.theme].additive,
+    setTrail(list) { S.trail = list; },
+    setCamera(c) { S.camera = ['side', 'top'].includes(c) ? c : 'front'; },
+    isLight: () => false,
+    themes: () => Object.fromEntries(Object.entries(THEMES).map(([k, T]) => [k, [T.led || T.trim, ...T.notes]])),
   };
 }
