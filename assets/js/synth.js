@@ -4,6 +4,15 @@
 // Electric grand, electric piano and harpsichord = FluidR3 GM by Frank Wen (MIT). See assets/sounds/CREDITS.txt.
 
 const V = '?v=7';
+// Phones have little memory, and a browser tab that uses too much is closed without warning. On a phone each instrument
+// keeps one recording per note, in mono, at most six seconds long: about a sixth of what a computer loads.
+const LITE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.deviceMemory || 8) <= 2;
+function slim(buf) {
+  const n = Math.min(buf.length, Math.floor(buf.sampleRate * 6)), out = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: buf.sampleRate }), d = out.getChannelData(0), fade = Math.floor(buf.sampleRate * 1.2);
+  for (let c = 0; c < buf.numberOfChannels; c++) { const x = buf.getChannelData(c); for (let i = 0; i < n; i++) d[i] += x[i] / buf.numberOfChannels; }
+  if (n < buf.length) for (let k = 0; k < fade; k++) d[n - 1 - k] *= k / fade;
+  return out;
+}
 export const INSTRUMENTS = [
   { id: 'grand', name: 'Concert Grand', about: 'A real Yamaha C5 grand, recorded note by note. Soft and loud playing use different recordings.', pack: 'grand', gain: 1 },
   { id: 'bright', name: 'Bright Grand', about: 'The same grand voiced brighter and harder, the way pop and stage pianos are set up.', pack: 'grand', gain: 0.9, bias: 0.3,
@@ -68,11 +77,17 @@ function loadPack(name, onProgress) {
       decoder = decoder || new OfflineAudioContext(2, 1, 44100);
       const layers = [];
       let done = 0;
-      await Promise.all(head.files.map(async (f) => {
-        const buf = await decoder.decodeAudioData(bytes.slice(base + f.o, base + f.o + f.n).buffer);
-        (layers[f.l] = layers[f.l] || []).push({ p: f.p, buf, start: prepare(buf) });
-        onProgress?.(0.6 + 0.4 * ++done / head.files.length);
-      }));
+      const top = Math.max(...head.files.map((f) => f.l)), files = LITE ? head.files.filter((f) => f.l === top) : head.files;
+      const one = async (f) => {
+        let buf = await decoder.decodeAudioData(bytes.slice(base + f.o, base + f.o + f.n).buffer);
+        const start = prepare(buf);
+        if (LITE) buf = slim(buf);
+        const l = LITE ? 0 : f.l;
+        (layers[l] = layers[l] || []).push({ p: f.p, buf, start });
+        onProgress?.(0.6 + 0.4 * ++done / files.length);
+      };
+      if (LITE) for (const f of files) await one(f); // one at a time, so the full-size recordings are never all in memory together
+      else await Promise.all(files.map(one));
       // for every key, the recording closest in pitch
       const pick = layers.map((list) => Array.from({ length: 128 }, (_, p) => list.reduce((a, b) => (Math.abs(b.p - p) < Math.abs(a.p - p) ? b : a))));
       return { pick };

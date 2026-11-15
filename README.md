@@ -90,6 +90,12 @@ Each later update: `git add . && git commit -m "Update" && git push`.
 
 **Sound:** eight instruments. Concert Grand is a real Yamaha C5 grand recorded note by note (Salamander Grand Piano); Bright Grand, Soft Felt and Honky-tonk Upright are made from those recordings. Electric Grand, Electric Piano and Harpsichord come from the FluidR3 sound set. Simple Synth needs no files. "Room" adds the echo of a room or a concert hall. The sound files are in `assets/sounds/` (about 5.7 MB; credits in `CREDITS.txt` there) and an instrument is downloaded the first time it is chosen.
 
+**Written music on a film strip:** in the piano picture a strip of film runs across the top with the music written on two staves. It moves from right to left past a line of light, so it reads from left to right like a page; each note glows and throws a few sparks as it is played. With a MIDI file it shows the piece (with key signature, and bar lines when the file has them); when she plays live it writes down each note as she plays it. It is a simplified notation: every note is at its true height with the right sharp, flat or natural and is hollow or filled by its length, but notes are spaced by time and there are no beams or rests. Untick "Written music on a film strip" under Look to hide it.
+
+**Notes travelling to the keys:** under Look, Notes there are three kinds. "Trails of light" (the default): each note is a round bright head with a straight tail that thins and dims behind it; the tail is as long as the note. "Water": streams with a bright edge that wander a little and narrow as they pour into the key; short notes become drops. "Bars": solid blocks.
+
+**On a phone:** the page rearranges itself for a narrow screen and starts with the tall picture looking along the keys. Press the keys in the picture to play (several fingers at once work; this also works with the mouse on a computer). The full-screen button makes the picture cover the page, with a Close button, because iPhones cannot make part of a page full screen. To save memory a phone loads a lighter version of each instrument (one recording per note, in mono). A phone cannot connect to the piano's cable in Safari, and "Make the video" may not be available there.
+
 **Look:** five colour sets (Aurora and Ember are the dark neon ones), three cameras (Front, Along the keys, Above) and two shapes (Wide for TV and YouTube, Tall for phones and Shorts). The choices are remembered on this computer.
 
 **Making a video:** on the Video tab choose size and smoothness, press **Make the video**, wait for the bar, then **Save the video**. Keep the tab in front while it works. The video uses the chosen instrument, room, colours, camera and shape. Its sound is the studio's instrument, not the room recording.
@@ -125,7 +131,7 @@ Keep your original photos and videos too; the journal stores web-sized copies.
 | --- | --- |
 | `index.html`, `assets/` | The journal viewer |
 | `admin.html` | The editor page (works only through Start Editor) |
-| `studio.html`, `assets/css/studio.css`, `assets/js/studio.js`, `stage.js`, `flight.js`, `dancer.js`, `listen.js`, `midi.js`, `synth.js` | The piano studio |
+| `studio.html`, `assets/css/studio.css`, `assets/js/studio.js`, `stage.js`, `flight.js`, `score.js`, `dancer.js`, `listen.js`, `midi.js`, `synth.js` | The piano studio |
 | `assets/sounds/` | Instrument recordings for the studio (see `CREDITS.txt` there) |
 | `assets/vendor/` | Third-party code used by the studio: three.js (3D) and mp4-muxer (video files), both MIT licensed |
 | `tools/editor_server.py` | Small local program that lets the editor save files; listens only on this computer |

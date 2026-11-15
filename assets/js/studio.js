@@ -1,9 +1,9 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
-import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=7';
-import { createStage } from './stage.js?v=9';
+import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=10';
+import { createStage } from './stage.js?v=12';
 import { createListener, STYLE_NAMES } from './listen.js?v=8';
-import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=7';
+import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=12';
 
 const LEAD = 1.5, TAIL = 2.5; // seconds of runway before the first note and after the last
 const canvas = $('#stage'), box = $('#stagebox'), stage = createStage(canvas);
@@ -13,7 +13,7 @@ const V = { rec: null, chunks: [], dest: null }; // live screen recording
 const R = { on: false, events: [], start: 0 }; // recording of what is played
 const L = { access: null, inputs: [], held: new Map(), trail: [], voices: new Map(), sustained: [], pedal: false, last: -99 }; // live playing
 const ui = Object.fromEntries(['play', 'seek', 'clock', 'speed', 'midifile', 'demo', 'record', 'savemidi', 'labels', 'effects', 'motion', 'mic', 'capture', 'vtitle', 'size', 'fps',
-  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now'].map((id) => [id, $('#' + id)]));
+  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon'].map((id) => [id, $('#' + id)]));
 const say = (id, text) => { $('#' + id).textContent = text; };
 const mmss = (s) => { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 const safeName = () => (P.name || 'piano').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'piano';
@@ -21,9 +21,10 @@ const clock = () => performance.now() / 1000;
 const fill = (el) => el.style.setProperty('--fill', `${((el.value - el.min) / (el.max - el.min || 1)) * 100}%`);
 
 // ---------- choices are remembered on this computer ----------
-const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 2, dance: 'auto', camera: 'front', shape: 'wide', labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+const PHONE = matchMedia('(max-width: 640px)').matches; // a phone held upright: start with the tall picture looking along the keys, which fills the screen
+const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
 const C = { ...DEFAULTS };
-try { const saved = JSON.parse(localStorage.getItem('studio') || '{}'); if (saved.v !== 2) delete saved.labels; Object.assign(C, saved, { v: 2 }); } catch {} // v 2: note names are off unless switched on again
+try { const saved = JSON.parse(localStorage.getItem('studio') || '{}'); if (!(saved.v >= 2)) delete saved.labels; if (saved.v !== 3) delete saved.notes; Object.assign(C, saved, { v: 3 }); } catch {} // v 2: note names off unless switched on again; v 3: notes are trails of light unless changed again
 const remember = () => { try { localStorage.setItem('studio', JSON.stringify(C)); } catch {} };
 
 function fit() { // even sizes keep video encoders happy
@@ -201,13 +202,24 @@ radios($('#views'), [], C.view, (v) => { C.view = v; remember(); stage.setView(M
 radios($('#dances'), [], C.dance, (v) => { C.dance = v; remember(); stage.setDance(v); });
 radios($('#cameras'), [], C.camera, (v) => { C.camera = v; remember(); stage.setCamera(v); });
 radios($('#shapes'), [], C.shape, (v) => { C.shape = v; remember(); box.classList.toggle('tall', v === 'tall'); fit(); });
-for (const [k, fn] of [['labels', 'setLabels'], ['effects', 'setEffects'], ['motion', 'setMotion']]) {
+radios($('#notes'), [], C.notes, (v) => { C.notes = v; remember(); stage.setNotes(v); });
+stage.setNotes(C.notes);
+for (const [k, fn] of [['labels', 'setLabels'], ['effects', 'setEffects'], ['motion', 'setMotion'], ['ribbon', 'setRibbon']]) {
   ui[k].checked = C[k]; stage[fn](C[k]);
   ui[k].addEventListener('change', () => { C[k] = ui[k].checked; remember(); stage[fn](C[k]); });
 }
 stage.setTheme(C.theme); stage.setView(C.view); stage.setDance(C.dance); pictureChanged(); stage.setCamera(C.camera); box.classList.toggle('tall', C.shape === 'tall'); accent();
 ui.vtitle.addEventListener('input', () => { ui.overlay.textContent = ui.vtitle.value; });
-$('#full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else (box.requestFullscreen || box.webkitRequestFullscreen).call(box); });
+const goFull = box.requestFullscreen || box.webkitRequestFullscreen; // iPhones have no full screen for a part of a page: there the picture simply covers the page
+const unfill = () => { document.body.classList.remove('fill'); setTimeout(fit, 60); };
+$('#full').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (goFull) goFull.call(box);
+  else { document.body.classList.add('fill'); setTimeout(fit, 60); }
+});
+$('#unfill').addEventListener('click', unfill);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') unfill(); });
+addEventListener('orientationchange', () => setTimeout(fit, 250));
 document.addEventListener('fullscreenchange', () => setTimeout(fit, 60));
 
 const tabs = [...document.querySelectorAll('[role=tab]')];
@@ -308,6 +320,21 @@ ui.record.addEventListener('click', async () => {
   say('rec-msg', found ? `Recording from ${L.inputs.map((i) => i.name).join(', ')}. Press Stop when she has finished.`
     : 'Recording, but no piano is connected: check the USB cable. The computer keyboard works too (A S D F G H J K).');
 });
+
+// Playing by touch or with the mouse: press the keys in the picture. Several fingers at once work, and so does sliding along the keys.
+const touching = new Map(); // pointer id -> pitch
+function touch(e, start) {
+  if (C.view !== 'piano' || P.busy || M.on) return;
+  const r = canvas.getBoundingClientRect(), hit = stage.pick(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1)), was = touching.get(e.pointerId);
+  if (!start && was == null) return;
+  if (hit && hit.pitch === was) return;
+  if (was != null) { liveOff(was); touching.delete(e.pointerId); }
+  if (hit) { if (start) { audio(); e.preventDefault(); } touching.set(e.pointerId, hit.pitch); liveOn(hit.pitch, Math.min(0.9, Math.max(0.4, 0.45 + 0.07 * hit.depth))); } // nearer the front edge of the key = louder
+}
+const lift = (e) => { const was = touching.get(e.pointerId); if (was != null) { liveOff(was); touching.delete(e.pointerId); } };
+canvas.addEventListener('pointerdown', (e) => touch(e, true));
+canvas.addEventListener('pointermove', (e) => touch(e, false));
+for (const type of ['pointerup', 'pointercancel', 'pointerleave']) canvas.addEventListener(type, lift);
 
 // The computer keyboard as a small piano, for trying sounds without the real one. Space is play and pause.
 const KEYS = { KeyA: 60, KeyW: 61, KeyS: 62, KeyE: 63, KeyD: 64, KeyF: 65, KeyT: 66, KeyG: 67, KeyY: 68, KeyH: 69, KeyU: 70, KeyJ: 71, KeyK: 72, KeyO: 73, KeyL: 74, KeyP: 75, Semicolon: 76 };
@@ -521,5 +548,5 @@ requestAnimationFrame(frame);
 fromJournal();
 chooseInstrument(C.instrument, $(`#instruments [data-v="${C.instrument}"]`), false);
 // If this browser has already been allowed to use the piano, connect without being asked.
-navigator.permissions?.query({ name: 'midi' }).then((p) => { if (p.state === 'granted') connect(true); }).catch(() => {});
+try { navigator.permissions?.query({ name: 'midi' }).then((p) => { if (p.state === 'granted') connect(true); }).catch(() => {}); } catch {} // some browsers do not know the question at all
 

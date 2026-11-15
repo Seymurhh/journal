@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Piano studio</title>
-<link rel="stylesheet" href="assets/css/studio.css?v=8">
+<link rel="stylesheet" href="assets/css/studio.css?v=12">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -27,6 +27,7 @@
       <canvas id="stage" aria-label="3D piano: glowing notes travel to the keys that play them"></canvas>
       <p id="overlay" class="overlay"></p>
       <p id="now" class="now" aria-hidden="true"></p>
+      <button id="unfill" class="unfill" type="button" aria-label="Leave full screen">Close</button>
     </div>
 
     <div class="transport" role="group" aria-label="Playback and recording">
@@ -47,7 +48,7 @@
       <button class="btn quiet" id="savemidi" type="button" disabled>Save as MIDI file</button>
       <button class="btn quiet" id="mic" type="button">Listen with the microphone</button>
     </div>
-    <p id="rec-msg" class="msg" role="status">Plug the piano's USB TO HOST port into this computer, switch the piano on, and press "Connect the piano". Use Chrome or Edge.</p>
+    <p id="rec-msg" class="msg" role="status">Plug the piano's USB TO HOST port into this computer, switch the piano on, and press "Connect the piano". Use Chrome or Edge. You can also press the keys in the picture.</p>
   </section>
 
   <aside class="side" aria-label="Settings">
@@ -87,6 +88,12 @@
           <button type="button" role="radio" data-v="energy" aria-checked="false">Energetic</button>
         </div>
       </div>
+      <h2 class="keys-only">Notes</h2>
+      <div class="seg keys-only" id="notes" role="radiogroup" aria-label="Notes">
+        <button type="button" role="radio" data-v="trails" aria-checked="true">Trails of light</button>
+        <button type="button" role="radio" data-v="water" aria-checked="false">Water</button>
+        <button type="button" role="radio" data-v="bars" aria-checked="false">Bars</button>
+      </div>
       <h2 class="keys-only">Camera</h2>
       <div class="seg keys-only" id="cameras" role="radiogroup" aria-label="Camera">
         <button type="button" role="radio" data-v="front" aria-checked="true">Front</button>
@@ -98,6 +105,7 @@
         <button type="button" role="radio" data-v="wide" aria-checked="true">Wide (TV, YouTube)</button>
         <button type="button" role="radio" data-v="tall" aria-checked="false">Tall (phone, Shorts)</button>
       </div>
+      <label class="check keys-only"><input type="checkbox" id="ribbon" checked><span>Written music on a film strip<small>The notes pass a line of light at the top and glow as they are played.</small></span></label>
       <label class="check"><input type="checkbox" id="labels"><span>Show note names</span></label>
       <label class="check"><input type="checkbox" id="effects" checked><span>Sparks, mist and light beams</span></label>
       <label class="check"><input type="checkbox" id="motion" checked><span>Gentle camera movement</span></label>
@@ -123,6 +131,6 @@
   </aside>
 </main>
 <footer class="credits">Grand piano recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Electric pianos and harpsichord: FluidR3 GM by Frank Wen.</footer>
-<script type="module" src="assets/js/studio.js?v=9"></script>
+<script type="module" src="assets/js/studio.js?v=12"></script>
 </body>
 </html>

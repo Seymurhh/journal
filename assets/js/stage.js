@@ -1,9 +1,10 @@
 // The 3D scene: a lacquered piano with jewel-coloured notes travelling toward the keys they play.
 // Everything is a pure function of the music time t, so a video export draws exactly what playback shows.
 import * as THREE from '../vendor/three.min.js?v=7';
-import { isBlack, noteName } from './midi.js?v=7';
-import { buildFlight, voicesFromPiece } from './flight.js?v=7';
+import { isBlack, noteName } from './midi.js?v=10';
+import { buildFlight, voicesFromPiece } from './flight.js?v=10';
 import { buildDancer } from './dancer.js?v=9';
+import { buildScore } from './score.js?v=11';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -17,6 +18,49 @@ const THEMES = {
   emerald: { bg: ['#010806', '#0b2417'], fog: '#04100b', runway: '#030a07', trim: '#e8c56a', felt: '#0e6b45', white: '#f5f3e8', black: '#080b09',
     notes: ['#35f0a0', '#ffcf5a', '#ff6b9a', '#7fd0ff'], label: '#04140d', glow: 1.0, bloom: [0.55, 0.55, 0.92], additive: true, mirror: 0.22 },
 };
+
+// Notes as water: each one is a stream of light that wanders a little far away, runs straight as it nears its key,
+// narrows and brightens as it pours in. Drawn by a small program on the graphics card, on a flat strip per note.
+const WATER_VERT = 'varying vec2 vUv; varying vec3 vW; void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }';
+const WATER_FRAG = `
+uniform float uTime, uLen, uHalf, uPlane, uPhase, uGain, uFar, uKind; uniform vec3 uColor;
+varying vec2 vUv; varying vec3 vW;
+void main() {
+  float near = -vW.z;                                   // distance still to travel to the keys
+  if (near < 0.1) discard;
+  float d = vUv.y * uLen, e = uLen - d;                 // distance from the leading end, and from the trailing end
+  float pour = 1.0 + 1.2 * smoothstep(1.5, 0.1, near);
+  float fade = smoothstep(uFar, uFar * 0.55, near);
+  if (uKind > 0.5) {
+    // A trail of light: a round bright head that reaches the key first, and a straight tail that thins and dims behind it.
+    float x = (vUv.x - 0.5) * 2.0 * uPlane;
+    float along = clamp(d / max(uLen, 0.001), 0.0, 1.0);
+    float w = uHalf * mix(0.62, 0.16, pow(along, 0.8)) * sqrt(clamp(e / 0.2, 0.0, 1.0));
+    float tail = exp(-2.6 * x * x / max(w * w, 0.00001)) * mix(0.9, 0.2, along) * smoothstep(0.0, 0.18, d);
+    tail *= 0.86 + 0.14 * sin(d * 2.4 + uTime * 5.0 + uPhase);                         // a slow shimmer running down the tail
+    float hr = uHalf * 0.78, hd = d - hr;                                              // the head: a soft ball of light
+    float head = exp(-2.2 * (hd * hd + x * x) / (hr * hr));
+    float I = max(tail, head);
+    if (I < 0.01) discard;
+    vec3 c = uColor * I * 1.15 + vec3(1.0) * pow(head, 3.0) * 0.55 + uColor * pow(tail, 4.0) * 0.3;
+    gl_FragColor = vec4(c * uGain * pour * fade, 1.0);
+    return;
+  }
+  float flow = uTime * 2.6 + uPhase;
+  float calm = smoothstep(0.6, 7.0, near);
+  float wob = calm * (0.1 * sin(vW.z * 0.36 + flow * 0.7) + 0.035 * sin(vW.z * 0.8 - flow * 1.1));
+  float w = uHalf * (0.86 + 0.14 * calm * sin(vW.z * 0.8 + flow * 1.2));
+  w *= sqrt(clamp(d / 0.28, 0.0, 1.0)) * mix(0.3, 1.0, smoothstep(0.0, min(1.6, uLen * 0.7), e)) * sqrt(clamp(e / 0.12, 0.0, 1.0)); // a round head, a tail drawn out thin
+  w *= mix(0.6, 1.0, smoothstep(0.1, 1.4, near));       // the pour narrows into the key
+  float x = (vUv.x - 0.5) * 2.0 * uPlane - wob;
+  float r = abs(x) / max(w, 0.0001);
+  float body = smoothstep(1.0, 0.62, r);
+  if (body <= 0.003) discard;
+  float rim = smoothstep(0.5, 0.86, r) * smoothstep(1.0, 0.86, r);                       // the bright edge of a bead of water
+  float glint = pow(0.5 + 0.5 * sin(d * 0.9 + uTime * 3.2 + uPhase), 4.0) * smoothstep(0.6, 0.0, r); // highlights sliding toward the keys
+  vec3 c = uColor * (0.42 * body + 0.7 * rim) + mix(uColor, vec3(1.0), 0.5) * glint * 0.45;
+  gl_FragColor = vec4(c * uGain * pour * fade, 1.0);
+}`;
 const SPEED = 9; // runway units per second; one unit = one white key width
 const A0 = 21, C8 = 108, DECK = 0.7; // DECK = height of the runway surface
 
@@ -51,8 +95,8 @@ export function createStage(canvas) {
   const clip = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]; // hide the part of a note that has passed the keys
   const dot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const beamTex = canvasTex(32, 128, (g, w, h) => { const r = g.createLinearGradient(0, h, 0, 0); r.addColorStop(0, 'rgba(255,255,255,.95)'); r.addColorStop(0.25, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  const S = { theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
-  const labelMats = new Map();
+  const S = { notes: 'trails', ribbon: true, score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
+  const labelMats = new Map(), ray = new THREE.Raycaster(), point = new THREE.Vector2();
 
   function labelMaterial(pitch, T) {
     const k = S.theme + pitch;
@@ -64,6 +108,8 @@ export function createStage(canvas) {
   }
 
   function build() {
+    if (S.score) { S.score.dispose(); S.score = null; }
+    camera.removeFromParent(); // only the piano picture carries the camera inside its scene
     if (S.old) S.old.traverse((o) => { if (o.isSprite) return; o.geometry?.dispose(); if (o.material && !o.material.map) o.material.dispose(); });
     if (S.view === 'dancer') {
       S.dancer = buildDancer(THEMES[S.theme], { canvasTex, dot });
@@ -78,6 +124,7 @@ export function createStage(canvas) {
       return;
     }
     const T = THEMES[S.theme], scene = new THREE.Scene();
+    scene.add(camera); S.score = buildScore(T, camera); // the camera carries the score ribbon, so it has to be part of the scene
     scene.background = canvasTex(4, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, T.bg[0]); r.addColorStop(1, T.bg[1]); g.fillStyle = r; g.fillRect(0, 0, w, h); });
     scene.environment = env; scene.environmentIntensity = T.env ?? 0.22;
     [bloom.strength, bloom.radius, bloom.threshold] = T.bloom;
@@ -109,8 +156,7 @@ export function createStage(canvas) {
     const deckLen = S.far * 0.62;
     const deck = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, deckLen), lacquer);
     deck.position.set(0, DECK - 0.05, -deckLen / 2); deck.receiveShadow = true; deck.renderOrder = 1; scene.add(deck);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(60, 0.5, 0.25), new THREE.MeshStandardMaterial({ color: T.trim, metalness: 1, roughness: 0.3, emissive: T.trim, emissiveIntensity: 0.35 * T.glow }));
-    edge.position.set(0, DECK - 0.2, -deckLen); scene.add(edge);
+    // (the bright bar that used to mark the far end of the deck is gone: it showed as a stray line beside the score strip)
 
     // The hall around the piano: a polished floor far below, a back wall of light columns, and haze. These give the eye real distances to read.
     const hall = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshPhysicalMaterial({ color: T.additive ? '#07060a' : '#e9dcd2', roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.2 }));
@@ -182,23 +228,36 @@ export function createStage(canvas) {
     const oneTrack = !S.piece || S.piece.tracks === 1;
     const colorIndex = (n) => (oneTrack ? (n.pitch < 60 ? 1 : 0) : n.track); // one track (a recording): lower and upper halves get their own colour
     S.colorOf = (pitch) => new THREE.Color(T.notes[(pitch < 60 ? 1 : 0) % T.notes.length]);
+    const water = S.notes !== 'bars', trails = S.notes === 'trails'; // 'water' here means: drawn as light on a flat strip (trails or streams), not as solid bars
+    S.waterTime = { value: 0 };
+    const strip = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const waterMat = (color, half, gain) => new THREE.ShaderMaterial({ vertexShader: WATER_VERT, fragmentShader: WATER_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      uniforms: { uTime: S.waterTime, uLen: { value: 1 }, uHalf: { value: half }, uPlane: { value: half + 0.26 }, uPhase: { value: 0 }, uGain: { value: gain }, uFar: { value: S.far }, uKind: { value: trails ? 1 : 0 }, uColor: { value: color } } });
     (S.piece ? S.piece.notes : []).forEach((n, idx) => {
       if (n.pitch < A0 || n.pitch > C8) return;
       const level = Math.min(3, Math.floor(n.vel * 4)), black = isBlack(n.pitch);
       const len = Math.max(0.4, n.dur * SPEED - 0.1);
       // Louder notes are wider and brighter, so loudness never depends on colour alone.
       const w = (black ? 0.5 : 0.8) * (0.6 + 0.4 * n.vel), geo = noteGeo(w, len), y = black ? 1.75 : 1.2;
-      const ci = colorIndex(n);
-      const mesh = new THREE.Mesh(geo, noteMat(ci, level, false)); mesh.castShadow = true;
-      const twin = new THREE.Mesh(geo, noteMat(ci, level, true));
-      if (T.outline && len > 0.55) { const core = new THREE.Mesh(noteGeo(w * 0.56, len - 0.3), coreMat(ci)); core.position.y = 0.035; mesh.add(core); }
+      const ci = colorIndex(n), tint = new THREE.Color(T.notes[ci % T.notes.length]);
+      let mesh, twin;
+      if (water) {
+        const half = (trails ? 1.35 : 1) * (black ? 0.3 : 0.46) * (0.62 + 0.38 * n.vel), m = waterMat(tint, half, 0.75 + 0.75 * n.vel), m2 = waterMat(tint, half, 0.22 + 0.2 * n.vel);
+        const shown = trails ? Math.max(len, 1.1) : len; // a trail needs room for its round head, however short the note
+        m.uniforms.uLen.value = m2.uniforms.uLen.value = shown; m.uniforms.uPhase.value = m2.uniforms.uPhase.value = rnd(idx, 5) * 6.28;
+        mesh = new THREE.Mesh(strip, m); twin = new THREE.Mesh(strip, m2);
+        mesh.scale.set(2 * (half + 0.26), 1, shown); twin.scale.copy(mesh.scale); mesh.renderOrder = twin.renderOrder = 3;
+        mesh.userData.shown = shown;
+      } else { mesh = new THREE.Mesh(geo, noteMat(ci, level, false)); mesh.castShadow = true; twin = new THREE.Mesh(geo, noteMat(ci, level, true)); }
+      if (!water && T.outline && len > 0.55) { const core = new THREE.Mesh(noteGeo(w * 0.56, len - 0.3), coreMat(ci)); core.position.y = 0.035; mesh.add(core); }
       const sprite = new THREE.Sprite(labelMaterial(n.pitch, T)); sprite.scale.set(1.9, 0.95, 1); sprite.renderOrder = 6;
       scene.add(mesh, twin, sprite);
-      S.items.push({ n, idx, mesh, twin, sprite, len, y, color: new THREE.Color(T.notes[ci % T.notes.length]) });
+      S.items.push({ n, idx, mesh, twin, sprite, len, y, color: tint });
     });
     // Bars for notes played live: they leave the key when it is pressed and travel away over the deck.
     const unit = new THREE.RoundedBoxGeometry(1, 0.5, 1, 2, 0.12);
     S.pool = Array.from({ length: 140 }, () => {
+      if (water) { const mesh = new THREE.Mesh(strip, waterMat(new THREE.Color(), 0.3, 1)), twin = new THREE.Mesh(strip, waterMat(new THREE.Color(), 0.3, 0.3)); mesh.visible = twin.visible = false; mesh.renderOrder = twin.renderOrder = 3; scene.add(mesh, twin); return { mesh, twin, core: null, water: true }; }
       const mesh = new THREE.Mesh(unit, new THREE.MeshPhysicalMaterial({ color: '#ffffff', emissive: '#ffffff', emissiveIntensity: T.glow, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1, clippingPlanes: clip }));
       const twin = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ color: '#ffffff', clippingPlanes: clip }));
       const core = T.outline ? new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ color: '#000000', clippingPlanes: clip })) : null;
@@ -238,17 +297,18 @@ export function createStage(canvas) {
       return;
     }
     const T = THEMES[S.theme], { cx, dist, width, x0, ref } = S.cam;
+    S.waterTime.value = t;
     const sway = S.motion ? 1 : 0, trail = live ? S.trail || [] : [];
     // fx = every note that matters right now (from the piece, or played live), in one shape for the keys and the effects
     const fx = [];
     const span = S.far / SPEED;
     for (const it of S.items) {
       const { n, mesh, twin, sprite, len, y } = it, ahead = n.onset - t, off = n.onset + n.dur;
-      const show = !live && ahead < span && off > t - 0.05;
+      const show = !live && ahead < span && (off > t - 0.05 || n.onset + (mesh.userData.shown || 0) / SPEED > t);
       mesh.visible = twin.visible = show;
       sprite.visible = show && S.labels && ahead > 0.02;
       if (show) {
-        const z = -(ahead * SPEED + len / 2 + 0.05);
+        const z = -(ahead * SPEED + (mesh.userData.shown || len) / 2 + 0.05);
         mesh.position.set(KX[n.pitch], y, z);
         twin.position.set(KX[n.pitch], 2 * DECK - y, z);
         if (sprite.visible) sprite.position.set(KX[n.pitch], y + 0.95, -(ahead * SPEED + 0.6));
@@ -264,6 +324,12 @@ export function createStage(canvas) {
       if (near > S.far || used >= S.pool.length || far - near < 0.05) continue;
       const q = S.pool[used++], black = isBlack(n.pitch), len = far - near, w = (black ? 0.5 : 0.8) * (0.6 + 0.4 * n.vel), y = black ? 1.75 : 1.2, z = -(near + len / 2 + 0.3);
       q.mesh.visible = q.twin.visible = true;
+      if (q.water) { // live notes run the other way (away from the keys), so the strip is turned round: its round head leads
+        const half = w / 2;
+        for (const [m, gain] of [[q.mesh, 0.75 + 0.75 * n.vel], [q.twin, 0.22 + 0.2 * n.vel]]) { const u = m.material.uniforms; u.uLen.value = len; u.uHalf.value = half; u.uPlane.value = half + 0.26; u.uGain.value = gain; u.uColor.value.copy(color); u.uPhase.value = n.pitch; m.scale.set(2 * (half + 0.26), 1, -len); }
+        q.mesh.position.set(KX[n.pitch], y, z); q.twin.position.set(KX[n.pitch], 2 * DECK - y, z);
+        continue;
+      }
       q.mesh.scale.set(w, 1, len); q.twin.scale.set(w, 1, len);
       q.mesh.position.set(KX[n.pitch], y, z); q.twin.position.set(KX[n.pitch], 2 * DECK - y, z);
       q.mesh.material.color.copy(color); q.mesh.material.emissive.copy(color); q.mesh.material.emissiveIntensity = T.glow * (0.7 + 0.5 * n.vel);
@@ -362,6 +428,8 @@ export function createStage(canvas) {
       if (h) { l.color.copy(h.a.color); l.position.set(KX[h.p], 2.6, -1.2); }
     });
     S.strike.material.emissiveIntensity = T.glow * (1.5 + Math.min(2, energy * 0.6));
+    S.score.mesh.visible = S.ribbon;
+    if (S.ribbon) S.score.update(t, S.piece, live ? trail : null);
     composer.render();
   }
 
@@ -378,7 +446,16 @@ export function createStage(canvas) {
     dancer: () => S.dancer,
     setDance(style) { S.dance = style; },
     setMic(points) { S.mic = points; },
+    // Which key is under a point of the picture? x and y run from -1 to 1 across it. Used for playing by touch or mouse.
+    pick(x, y) {
+      if (S.view !== 'piano' || !S.keys.length || !S.scene) return null;
+      ray.setFromCamera(point.set(x, y), camera);
+      const hit = ray.intersectObjects(S.keys.filter(Boolean), false)[0];
+      return hit ? { pitch: S.keys.indexOf(hit.object), depth: hit.point.z } : null;
+    },
     setLabels(on) { S.labels = on; },
+    setRibbon(on) { S.ribbon = on; },
+    setNotes(kind) { S.notes = ['bars', 'water'].includes(kind) ? kind : 'trails'; S.scene = null; },
     setEffects(on) { S.effects = on; },
     setMotion(on) { S.motion = on; },
     setTheme(name) { S.theme = THEMES[name] ? name : 'aurora'; S.scene = null; },

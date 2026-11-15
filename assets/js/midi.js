@@ -42,7 +42,7 @@ export function parseMidi(buffer) {
   const format = d.getUint16(p), ntracks = d.getUint16(p + 2), division = d.getUint16(p + 4);
   p += hlen;
   if (division & 0x8000) throw new Error('This MIDI file uses a timing format the studio cannot read yet.');
-  const ev = [];
+  const ev = [], info = {};
   for (let tr = 0; tr < ntracks && p < d.byteLength - 8; tr++) {
     const id = tag(), len = d.getUint32(p); p += 4;
     const end = p + len;
@@ -54,6 +54,8 @@ export function parseMidi(buffer) {
       if (status === 0xff) {
         const type = u8(), l = vlq();
         if (type === 0x51 && l === 3) ev.push({ tick, order: 0, tempo: (d.getUint8(p) << 16) | (d.getUint8(p + 1) << 8) | d.getUint8(p + 2) });
+        else if (type === 0x58 && l >= 2 && !info.meter) info.meter = [d.getUint8(p), 2 ** d.getUint8(p + 1)]; // time signature
+        else if (type === 0x59 && l >= 2 && !info.key) info.key = { sf: d.getInt8(p), minor: d.getUint8(p + 1) === 1 }; // key signature: sharps (+) or flats (-)
         p += l;
       } else if (status === 0xf0 || status === 0xf7) { p += vlq(); }
       else {
@@ -67,7 +69,7 @@ export function parseMidi(buffer) {
     p = end;
   }
   ev.sort((x, y) => x.tick - y.tick || x.order - y.order);
-  const piece = { source: 'midi', notes: [], pedal: [], tempoMap: [] };
+  const piece = { source: 'midi', notes: [], pedal: [], tempoMap: [], ...info };
   let tempo = 500000, lastTick = 0, time = 0;
   const open = new Map();
   for (const e of ev) {
