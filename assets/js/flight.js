@@ -105,7 +105,9 @@ export function buildFlight(T, tools) {
   function render(t, camera, { voices, notes, range, labels, effects, motion }) {
     const [lo, hi] = range, mid = (lo + hi) / 2, scale = Math.min(0.4, 10.5 / (hi - lo + 6));
     const Y = (p) => (p - mid) * scale;
-    camera.position.set(2 + (motion ? Math.sin(t * 0.17) * 6 : 0), 2.5 + (motion ? Math.sin(t * 0.11) * 1.5 : 0), 24);
+    const back = Math.max(1, (1.1 / camera.aspect)); // a narrow (tall) picture sees less from side to side, so the camera steps back until the whole line fits
+    camera.position.set(2 + (motion ? Math.sin(t * 0.17) * 6 : 0), 2.5 + (motion ? Math.sin(t * 0.11) * 1.5 : 0), 24 * back);
+    scene.fog.near = 40 * back; scene.fog.far = 140 * back;
     camera.lookAt(-1.5, 0, -8);
     for (const r of ruler) { r.s.visible = r.p >= lo - 6 && r.p <= hi + 6; r.s.position.set(HEADX + 3.4, Y(r.p), 0); }
 

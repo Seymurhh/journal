@@ -2,7 +2,7 @@
 // Everything is a pure function of the music time t, so a video export draws exactly what playback shows.
 import * as THREE from '../vendor/three.min.js?v=7';
 import { isBlack, noteName } from './midi.js?v=10';
-import { buildFlight, voicesFromPiece } from './flight.js?v=10';
+import { buildFlight, voicesFromPiece } from './flight.js?v=13';
 import { buildDancer } from './dancer.js?v=9';
 import { buildScore } from './score.js?v=11';
 
@@ -348,12 +348,20 @@ export function createStage(canvas) {
       camera.lookAt(cx - width * 0.08, 0, -width * 0.12);
     } else if (S.camera === 'top') { // straight down, like sheet music scrolling toward the player
       const h = dist * 1.02;
-      camera.position.set(cx + sx * width * 0.01, h * push, 4.5);
-      camera.lookAt(cx + sx * width * 0.01, 0, 4.5 - h * 0.42);
+      const zc = 8.3 + h * 0.035; // far enough toward the player that the whole length of the keys is in the picture
+      camera.position.set(cx + sx * width * 0.01, h * push, zc);
+      camera.lookAt(cx + sx * width * 0.01, 0, zc - h * 0.42);
+    } else if (camera.aspect < 1) { // front view in the tall picture: from higher up, the keys along the bottom and the runway filling the height
+      camera.position.set(cx + sx * width * 0.04, (dist * 0.8 + sy * dist * 0.015) * push, (dist * 0.42 + 2) * push);
+      camera.lookAt(cx + sx * width * 0.012, 0.3, -dist * 0.34);
     } else {
       camera.position.set(cx + sx * width * 0.05, (dist * 0.66 + sy * dist * 0.02) * push, (dist * 0.72 + 2) * push);
       camera.lookAt(cx + sx * width * 0.015, 0.3, -dist * 0.24);
     }
+    // The haze starts beyond the piano. In the tall picture the camera stands much further back to fit the keyboard in, so the haze moves back with it.
+    const reach = S.camera === 'side' ? 1 : Math.max(1, dist / ref);
+    S.scene.fog.near = ref * 1.1 * reach; S.scene.fog.far = ref * 3.4 * reach;
+    renderer.toneMappingExposure = camera.aspect < 1 && S.camera !== 'side' ? 1.3 : 1; // small and far away: a little more light
     S.horizon.material.opacity = S.effects ? 0.02 + 0.1 * pulse : 0;
 
     // press[pitch] = how far down the key is (0..1), with its colour and loudness
