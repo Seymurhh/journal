@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Piano studio</title>
-<link rel="stylesheet" href="assets/css/studio.css?v=12">
+<link rel="stylesheet" href="assets/css/studio.css?v=14">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -15,7 +15,7 @@
   <a class="brand" href="./" title="Back to the journal"><svg viewBox="0 0 32 26" aria-hidden="true"><path d="M16 3c3.200 4 3.200 11 0 16c-3.200-5-3.200-12 0-16z"/><path d="M5 8c5 1 9 5 11 11c-6 0-11-4-11-11z"/><path d="M27 8c-5 1-9 5-11 11c6 0 11-4 11-11z"/><path d="M1 16c5-.5 10 .5 15 3c-5 3-11 2-15-3z"/><path d="M31 16c-5-.5-10 .5-15 3c5 3 11 2 15-3z"/></svg><span>Piano studio</span></a>
   <div class="piece">
     <h1 id="piece-title">Nothing loaded yet</h1>
-    <p id="piece-info">Connect the piano and play, open a MIDI file, or try the demo.</p>
+    <p id="piece-info">Connect the piano and play, choose a piece, or open a MIDI file.</p>
   </div>
   <button class="pill" id="connect" type="button"><i class="dot" aria-hidden="true"></i><span id="connect-text">Connect the piano</span></button>
   <a class="back" href="./">Journal</a>
@@ -44,7 +44,8 @@
 
     <div class="sources">
       <label class="btn quiet" for="midifile">Open a MIDI file</label><input type="file" id="midifile" accept=".mid,.midi,audio/midi">
-      <button class="btn quiet" id="demo" type="button">Try the demo</button>
+      <select class="btn quiet pick" id="library" aria-label="Play a piece from the library"><option value="">Play a piece…</option></select>
+      <button class="btn quiet" id="demo" type="button" hidden>Try the demo</button>
       <button class="btn quiet" id="savemidi" type="button" disabled>Save as MIDI file</button>
       <button class="btn quiet" id="mic" type="button">Listen with the microphone</button>
     </div>
@@ -131,6 +132,6 @@
   </aside>
 </main>
 <footer class="credits">Grand piano recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Electric pianos and harpsichord: FluidR3 GM by Frank Wen.</footer>
-<script type="module" src="assets/js/studio.js?v=13"></script>
+<script type="module" src="assets/js/studio.js?v=14"></script>
 </body>
 </html>

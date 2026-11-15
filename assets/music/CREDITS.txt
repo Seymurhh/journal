@@ -1,0 +1,65 @@
+Pieces in the studio's library
+
+All the music is in the public domain (the composers died between 1750 and 1925).
+The MIDI files were made from the free editions of the Mutopia Project (https://www.mutopiaproject.org)
+with LilyPond 2.24; each edition's own licence is given below and still applies to the file made from it.
+
+satie-gnossienne-1.smf
+  Erik Satie: Gnossienne No. 1
+  Notes after the edition typeset by Knute Snortum for the Mutopia Project (CC BY-SA 4.0)
+
+satie-gymnopedie-1.smf
+  Erik Satie: Gymnopédie No. 1
+  Typeset by Evin Robertson for the Mutopia Project (public domain)
+
+beethoven-fur-elise.smf
+  Ludwig van Beethoven: Für Elise
+  Typeset by Stelios Samelis for the Mutopia Project (public domain)
+
+beethoven-moonlight-sonata-1.smf
+  Ludwig van Beethoven: Moonlight Sonata, first movement
+  Typeset by Stewart Holmes for the Mutopia Project (CC BY-SA 2.5)
+
+bach-prelude-in-c.smf
+  Johann Sebastian Bach: Prelude in C major, BWV 846
+  Typeset by Tobias Erbsland for the Mutopia Project (public domain)
+
+mozart-rondo-alla-turca.smf
+  Wolfgang Amadeus Mozart: Rondo alla Turca
+  Typeset by Rune Zedeler and Chris Sawer for the Mutopia Project (public domain)
+
+chopin-nocturne-op9-no2.smf
+  Frédéric Chopin: Nocturne in E-flat, Op. 9 No. 2
+  Typeset by Renato Biolcati Rinaldi for the Mutopia Project (CC BY-SA 3.0)
+
+chopin-prelude-in-e-minor.smf
+  Frédéric Chopin: Prelude in E minor, Op. 28 No. 4
+  Typeset by Magnus Lewis-Smith for the Mutopia Project (public domain)
+
+chopin-fantaisie-impromptu.smf
+  Frédéric Chopin: Fantaisie-Impromptu, Op. 66
+  Typeset by Guy D. Lederfein for the Mutopia Project (public domain)
+
+debussy-clair-de-lune.smf
+  Claude Debussy: Clair de lune
+  Typeset by Keith OHara for the Mutopia Project (public domain)
+
+schumann-traumerei.smf
+  Robert Schumann: Träumerei
+  Typeset by Ying-Chun Liu for the Mutopia Project (public domain)
+
+grieg-hall-of-the-mountain-king.smf
+  Edvard Grieg: In the Hall of the Mountain King
+  Typeset by Coyau for the Mutopia Project (public domain)
+
+joplin-the-entertainer.smf
+  Scott Joplin: The Entertainer
+  Typeset by Chris Sawer for the Mutopia Project (public domain)
+
+Changes made here: the tempo was set for the Rondo alla Turca (126), the Prelude in C (70), the Moonlight Sonata (54)
+and the Gymnopédie (66), whose files had none of their own; the sustain pedal was added by a simple rule (change the
+pedal when the bass note changes) to the Prelude in C, Moonlight Sonata, Nocturne, Clair de lune, Gymnopédie and
+Träumerei, whose editions gave no pedal in their MIDI. The Gnossienne was entered by hand from its edition.
+
+The files end in .smf (Standard MIDI File) instead of .mid: they are ordinary MIDI files, renamed because this site
+never publishes .mid files, so that her own recordings cannot be published by accident.

@@ -80,6 +80,8 @@ Each later update: `git add . && git commit -m "Update" && git push`.
 
 `studio.html` turns a piano performance into a 3D view (notes travelling to a keyboard that lights up) and can make an MP4 video. It runs entirely in the browser; nothing is uploaded.
 
+**Library:** "Play a piece…" under the picture lists thirteen well-known pieces (Satie, Beethoven, Bach, Mozart, Chopin, Debussy, Schumann, Grieg, Joplin); choosing one loads and plays it. All are in the public domain; the files are in `assets/music/` with their sources and licences in `CREDITS.txt` there. The files end in `.smf`: they are ordinary MIDI files, renamed because the site's safety net (`.gitignore`) never publishes `.mid` files, so that her own recordings cannot go public by accident. To add a piece, copy its MIDI file into that folder, change the ending to `.smf`, and add a line to `index.json`. Only add music whose composer died more than 70 years ago, or that you have the right to publish: a modern piece (for example "Rush E", 2018) cannot go on the public site, though you can still open your own copy with "Open a MIDI file".
+
 **Playing live and recording (Yamaha digital piano)**
 
 1. Connect a USB A-to-B cable ("printer cable") from the piano's USB TO HOST port to the computer. A Mac with only USB-C ports needs a USB-C adapter or a USB-C to USB-B cable.

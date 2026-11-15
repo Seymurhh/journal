@@ -125,3 +125,5 @@ body.no-keys .keys-only { display: none; }
   .swatches { gap: 5px; } .seg button { font-size: .82rem; padding: 8px 4px; }
   .credits { padding: 6px 12px 16px; }
 }
+select.pick { width: auto; max-width: 100%; color: var(--ink); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); padding-right: 12px; }
+@media (max-width: 640px) { .sources select.pick { flex: 1 1 100%; } }

@@ -13,7 +13,7 @@ const V = { rec: null, chunks: [], dest: null }; // live screen recording
 const R = { on: false, events: [], start: 0 }; // recording of what is played
 const L = { access: null, inputs: [], held: new Map(), trail: [], voices: new Map(), sustained: [], pedal: false, last: -99 }; // live playing
 const ui = Object.fromEntries(['play', 'seek', 'clock', 'speed', 'midifile', 'demo', 'record', 'savemidi', 'labels', 'effects', 'motion', 'mic', 'capture', 'vtitle', 'size', 'fps',
-  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon'].map((id) => [id, $('#' + id)]));
+  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon', 'library'].map((id) => [id, $('#' + id)]));
 const say = (id, text) => { $('#' + id).textContent = text; };
 const mmss = (s) => { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 const safeName = () => (P.name || 'piano').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'piano';
@@ -240,6 +240,33 @@ ui.midifile.addEventListener('change', async () => {
   ui.midifile.value = '';
 });
 ui.demo.addEventListener('click', () => { load(demoPiece(), 'Demo pattern'); play(); });
+
+// The library: well-known pieces kept with the studio as MIDI files (assets/music/, listed in index.json).
+let library = [];
+fetchJSON('assets/music/index.json').then((list) => {
+  library = list;
+  let group = null;
+  list.forEach((it, i) => {
+    if (!group || group.label !== it.composer) { group = document.createElement('optgroup'); group.label = it.composer; ui.library.append(group); }
+    const o = document.createElement('option'); o.value = String(i); o.textContent = it.title; group.append(o);
+  });
+  const o = document.createElement('option'); o.value = 'demo'; o.textContent = 'Short demo pattern'; ui.library.append(o);
+}).catch(() => { ui.library.hidden = true; ui.demo.hidden = false; }); // no library on this copy of the site: offer the demo instead
+ui.library.addEventListener('change', async () => {
+  const v = ui.library.value;
+  if (!v || P.busy || R.on || M.on) return;
+  audio(); // while the click still counts as permission to make sound
+  if (v === 'demo') { load(demoPiece(), 'Demo pattern'); return play(); }
+  const it = library[Number(v)];
+  say('rec-msg', 'Opening the piece…');
+  try {
+    const r = await fetch(`assets/music/${it.file}?v=1`);
+    if (!r.ok) throw new Error('The piece could not be loaded.');
+    load(parseMidi(await r.arrayBuffer()), `${it.title} · ${it.composer}`);
+    say('rec-msg', `${it.credit}.`);
+    play();
+  } catch (err) { say('rec-msg', err.message || 'The piece could not be loaded.'); }
+});
 
 // ---------- live playing: the piano over its USB cable (or the computer keyboard) ----------
 function showHeld() { ui.now.textContent = C.labels ? [...L.held.keys()].sort((a, b) => a - b).map(noteName).join('  ') : ''; }
