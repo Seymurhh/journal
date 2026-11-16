@@ -4,7 +4,7 @@ import * as THREE from '../vendor/three.min.js?v=7';
 import { isBlack, noteName } from './midi.js?v=10';
 import { buildFlight, voicesFromPiece } from './flight.js?v=13';
 import { buildDancer } from './dancer.js?v=9';
-import { buildScore } from './score.js?v=17';
+import { buildScore } from './score.js?v=18';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',

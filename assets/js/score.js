@@ -159,7 +159,7 @@ export function buildScore(T, camera) {
   }
   // The balls themselves are real spheres floating just in front of the strip (so they catch the light and come toward
   // the viewer at the top of each hop); on the strip only their glow is drawn, where they touch down.
-  const R = 17, unit = sh / H; // ball radius in canvas pixels, and the size of one canvas pixel on the strip
+  const R = 11, unit = sh / H; // ball radius in canvas pixels, and the size of one canvas pixel on the strip
   const balls = [0, 1].map((staff) => {
     const c = new THREE.Color(colors[staff % colors.length]);
     const m = new THREE.Mesh(new THREE.SphereGeometry(R * unit, 32, 20), new THREE.MeshPhysicalMaterial({ color: c, emissive: c, emissiveIntensity: 0.55, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08, depthTest: false, fog: false, transparent: true })); // "transparent" only so that it is drawn after the strip, not under it
@@ -169,8 +169,8 @@ export function buildScore(T, camera) {
   const lamp = new THREE.PointLight('#ffffff', 5, sh * 4, 1); lamp.position.set(-sw * 0.12, sh * 1.1, sh * 1.2); mesh.add(lamp); // a small light of their own, so the balls are shaded like solid things
   function place(staff, x, ground, up, squash, color) {
     const k = Math.max(0, 1 - up / 60);
-    const glow = g.createRadialGradient(x, ground, 0, x, ground, 30 + 16 * k); glow.addColorStop(0, color); glow.addColorStop(1, 'rgba(0,0,0,0)');
-    g.globalAlpha = 0.18 + 0.5 * k; g.fillStyle = glow; g.fillRect(x - 50, ground - 50, 100, 100); g.globalAlpha = 1;
+    const glow = g.createRadialGradient(x, ground, 0, x, ground, 22 + 12 * k); glow.addColorStop(0, color); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalAlpha = 0.14 + 0.46 * k; g.fillStyle = glow; g.fillRect(x - 40, ground - 40, 80, 80); g.globalAlpha = 1;
     const m = balls[staff], X = (x / used - 0.5) * sw, Y = (0.5 - Math.max(R + 4, ground - R * (1 - 0.3 * squash) - up) / H) * sh; // never off the top of the strip
     m.visible = true;
     m.position.set(X, Y, -bow * (X / (sw / 2)) ** 2 + R * unit * 1.2 + up * unit * 0.45); // rising also brings it toward the viewer
@@ -180,7 +180,11 @@ export function buildScore(T, camera) {
   // t = music time (or the clock, when playing live). trail = notes being played live, or null to show the piece.
   function update(t, piece, trail, dots) {
     if (!trail && piece && of !== piece) { prepared = prepare(piece); of = piece; }
-    const w = used, live = !!trail, now = Math.round(w * (live ? 0.8 : 0.36)), sf = live ? 0 : prepared && piece ? prepared.sf : 0;
+    const w = used, live = !!trail;
+    // Where on the strip "now" is. With the balls on, it travels from the left end to the right end over the whole piece,
+    // so the balls move forward as the music does and show how far there is to go. (The notes still come to meet them.)
+    const part = piece && piece.duration ? Math.min(1, Math.max(0, t / piece.duration)) : 0;
+    const now = Math.round(live ? w * 0.8 : dots && piece ? LEFT + 55 + part * (w - LEFT - 55 - 120) : w * 0.36), sf = live ? 0 : prepared && piece ? prepared.sf : 0;
     g.clearRect(0, 0, W, H);
     // the film: a dark strip with a fine bright edge and sprocket holes that travel with the music
     const band = g.createLinearGradient(0, 0, 0, H); band.addColorStop(0, 'rgb(30,34,43)'); band.addColorStop(0.09, 'rgb(26,30,38)'); band.addColorStop(0.1, 'rgb(7,8,12)'); band.addColorStop(0.9, 'rgb(7,8,12)'); // solid behind the staves, so nothing passing underneath mixes with the notes band.addColorStop(0.91, 'rgb(26,30,38)'); band.addColorStop(1, 'rgb(30,34,43)');
@@ -247,8 +251,10 @@ export function buildScore(T, camera) {
     else { g.font = 'italic 600 44px Georgia, serif'; g.fillText('G', 40, TREBLE - 10); g.fillText('F', 42, BASS - 18); }
     g.font = '25px serif'; g.textBaseline = 'middle';
     for (let i = 0; i < Math.abs(sf); i++) for (const [staff, name] of [[0, 'treble'], [1, 'bass']]) g.fillText(sf < 0 ? '♭' : '♯', 88 + i * 10, stepY(SIG[sf < 0 ? 'flat' : 'sharp'][name][i], staff) + (sf < 0 ? -4 : 0));
-    g.shadowColor = led; g.shadowBlur = 14; g.strokeStyle = led; g.lineWidth = 2; g.globalAlpha = 0.9;
-    g.beginPath(); g.moveTo(now - 13, 26); g.lineTo(now - 13, H - 26); g.stroke();
+    if (!dots) { // without the balls, a faint line shows where "now" is; with them, the balls mark it and the line is left out
+      g.shadowColor = led; g.shadowBlur = 10; g.strokeStyle = led; g.lineWidth = 1.5; g.globalAlpha = 0.45;
+      g.beginPath(); g.moveTo(now - 13, 26); g.lineTo(now - 13, H - 26); g.stroke();
+    }
     g.shadowBlur = 0; g.globalAlpha = 1;
     // both ends of the strip fade into the dark
     g.globalCompositeOperation = 'destination-in';
