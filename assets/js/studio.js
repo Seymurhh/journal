@@ -1,7 +1,7 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
 import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=10';
-import { createStage } from './stage.js?v=16';
+import { createStage } from './stage.js?v=17';
 import { createListener, STYLE_NAMES } from './listen.js?v=8';
 import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=12';
 

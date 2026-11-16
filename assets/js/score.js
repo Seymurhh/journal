@@ -146,20 +146,35 @@ export function buildScore(T, camera) {
 
   // A dot of light per hand that hops along the music: it comes down on each note exactly as the note is played.
   // The notes come to the line of light, so the dot stays above the line and the hop is up and down.
-  function dotY(list, t, staff) {
-    if (!list.length) return (staff ? BASS : TREBLE) - 2 * SP - 13;
+  // Returns [where it touches down (the top of the note it is over), how high above that it is now], in canvas pixels.
+  function hop(list, t, staff) {
+    if (!list.length) return [(staff ? BASS : TREBLE) - 2 * SP, 0];
     let lo = 0, hi = list.length - 1;
-    if (t < list[0].t) { const u = Math.min(1, (list[0].t - t) / 1.2); return list[0].y - 13 - 46 * Math.sin(u * Math.PI / 2); } // falling onto the first note
+    if (t < list[0].t) { const u = Math.min(1, (list[0].t - t) / 1.2); return [list[0].y, 44 * Math.sin(u * Math.PI / 2)]; } // falling onto the first note
     while (lo < hi) { const m = (lo + hi + 1) >> 1; if (list[m].t <= t) lo = m; else hi = m - 1; }
     const a = list[lo], b = list[lo + 1];
-    if (!b) { const age = t - a.t; return a.y - 13 - 40 * Math.exp(-age * 2.4) * Math.abs(Math.sin(age * 6)); } // the last note: a few small bounces, then still
-    const gap = b.t - a.t, u = (t - a.t) / gap, height = Math.min(70, 16 + 60 * gap); // longer waits, higher hops
-    return a.y + (b.y - a.y) * u - 13 - height * 4 * u * (1 - u);
+    if (!b) { const age = t - a.t; return [a.y, 50 * Math.exp(-age * 2.4) * Math.abs(Math.sin(age * 6))]; } // the last note: a few small bounces, then still
+    const gap = b.t - a.t, u = (t - a.t) / gap, height = Math.min(52, 16 + 44 * gap); // longer waits, higher hops
+    return [a.y + (b.y - a.y) * u, height * 4 * u * (1 - u)];
   }
-  function drawDot(x, y, color, squash) {
-    g.shadowColor = color; g.shadowBlur = 18; g.fillStyle = color;
-    g.beginPath(); g.ellipse(x, y + 10 * squash * 0.4, 10.5 * (1 + 0.25 * squash), 10.5 * (1 - 0.3 * squash), 0, 0, Math.PI * 2); g.fill();
-    g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,0.85)'; g.beginPath(); g.arc(x - 3.2, y - 3.4, 3.1, 0, 7); g.fill();
+  // The balls themselves are real spheres floating just in front of the strip (so they catch the light and come toward
+  // the viewer at the top of each hop); on the strip only their glow is drawn, where they touch down.
+  const R = 17, unit = sh / H; // ball radius in canvas pixels, and the size of one canvas pixel on the strip
+  const balls = [0, 1].map((staff) => {
+    const c = new THREE.Color(colors[staff % colors.length]);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(R * unit, 32, 20), new THREE.MeshPhysicalMaterial({ color: c, emissive: c, emissiveIntensity: 0.55, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08, depthTest: false, fog: false, transparent: true })); // "transparent" only so that it is drawn after the strip, not under it
+    m.renderOrder = 21 + staff; m.visible = false; mesh.add(m);
+    return m;
+  });
+  const lamp = new THREE.PointLight('#ffffff', 5, sh * 4, 1); lamp.position.set(-sw * 0.12, sh * 1.1, sh * 1.2); mesh.add(lamp); // a small light of their own, so the balls are shaded like solid things
+  function place(staff, x, ground, up, squash, color) {
+    const k = Math.max(0, 1 - up / 60);
+    const glow = g.createRadialGradient(x, ground, 0, x, ground, 30 + 16 * k); glow.addColorStop(0, color); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalAlpha = 0.18 + 0.5 * k; g.fillStyle = glow; g.fillRect(x - 50, ground - 50, 100, 100); g.globalAlpha = 1;
+    const m = balls[staff], X = (x / used - 0.5) * sw, Y = (0.5 - Math.max(R + 4, ground - R * (1 - 0.3 * squash) - up) / H) * sh; // never off the top of the strip
+    m.visible = true;
+    m.position.set(X, Y, -bow * (X / (sw / 2)) ** 2 + R * unit * 1.2 + up * unit * 0.45); // rising also brings it toward the viewer
+    m.scale.set(1 + 0.22 * squash, 1 - 0.3 * squash, 1 + 0.22 * squash);
   }
 
   // t = music time (or the clock, when playing live). trail = notes being played live, or null to show the piece.
@@ -204,23 +219,21 @@ export function buildScore(T, camera) {
         }
       }
     }
+    for (const m of balls) m.visible = false;
     if (dots && (live || (piece && prepared))) {
       for (const staff of [0, 1]) {
-        let y, squash = 0;
-        if (live) { // live: the dot jumps each time a key of that hand is struck
+        let ground, up, squash = 0;
+        if (live) { // live: the ball of a hand jumps each time one of its keys is struck
           let last = null;
           for (const n of trail) if ((n.pitch < 60 ? 1 : 0) === staff && (!last || n.t0 > last.t0)) last = n;
-          const restY = (staff ? BASS : TREBLE) - 2 * SP;
-          if (!last) y = restY - 13;
-          else { const age = t - last.t0, top = Math.max(30, Math.min(H - 30, stepY(speller(0)(last.pitch).step, staff))); y = top - 13 - 52 * Math.exp(-age * 2.2) * Math.abs(Math.sin(age * 6.5)); squash = Math.max(0, 1 - age * 12); }
+          if (!last) { ground = (staff ? BASS : TREBLE) - 2 * SP; up = 0; }
+          else { const age = t - last.t0; ground = Math.max(30, Math.min(H - 30, stepY(speller(0)(last.pitch).step, staff))); up = 64 * Math.exp(-age * 2.2) * Math.abs(Math.sin(age * 6.5)); squash = Math.max(0, 1 - age * 12); }
         } else {
           const list = prepared.landings[staff];
-          y = dotY(list, t, staff);
+          [ground, up] = hop(list, t, staff);
           squash = list.length && isLanding(list, t) ? 1 : 0; // flattens for an instant as it lands
         }
-        const color = colors[staff % colors.length], x = now;
-        for (let k = 3; k >= 1; k--) { const yy = live ? y : dotY(prepared.landings[staff], t - k * 0.028, staff); g.globalAlpha = 0.16 * (4 - k) / 3; g.fillStyle = color; g.beginPath(); g.arc(x, yy, 9, 0, 7); g.fill(); } // a short tail
-        g.globalAlpha = 1; drawDot(x, y, color, squash);
+        place(staff, now, ground - 7, up, squash, colors[staff % colors.length]);
       }
     }
     // clefs and key signature stay at the left; the line of light marks "now"
@@ -244,5 +257,5 @@ export function buildScore(T, camera) {
     g.globalCompositeOperation = 'source-over';
     tex.needsUpdate = true;
   }
-  return { mesh, update, dispose() { camera.remove(mesh); geo.dispose(); tex.dispose(); mesh.material.dispose(); } };
+  return { mesh, update, dispose() { camera.remove(mesh); geo.dispose(); tex.dispose(); mesh.material.dispose(); for (const m of balls) { m.geometry.dispose(); m.material.dispose(); } } };
 }
