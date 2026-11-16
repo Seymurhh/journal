@@ -60,7 +60,9 @@ function prepare(piece) {
     let t = 0, i = 0;
     while (t < piece.duration + 1 && bars.length < 2000) { bars.push(t); for (let k = 0; k < per * 4; k++) { while (i + 1 < tempo.length && tempo[i + 1].time <= t + 1e-6) i++; t += 15 / tempo[i].bpm; } }
   }
-  return { sf, marks, bars };
+  // for the bouncing dots: where each staff's notes are, in order (grace notes are too quick to land on)
+  const landings = [0, 1].map((staff) => marks.filter((m) => m.staff === staff && !m.grace).map((m) => ({ t: m.t, y: Math.max(30, Math.min(H - 30, Math.min(...m.heads.map((h) => stepY(h.step, staff))))) })));
+  return { sf, marks, bars, landings };
 }
 
 export function buildScore(T, camera) {
@@ -69,12 +71,13 @@ export function buildScore(T, camera) {
   tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = 4; // smaller copies are made each frame, so thin lines stay whole when the strip is shown small
   // size and place: a strip across the upper middle of the view, ten units in front of the camera, its ends curving away
   const viewH = 2 * 10 * Math.tan((camera.fov / 2) * Math.PI / 180), viewW = viewH * camera.aspect, tall = camera.aspect < 1;
-  const sw = viewW * (tall ? 0.96 : 0.86), sh = tall ? viewH * 0.14 : sw * H / 1720, used = Math.min(W, Math.round(H * sw / sh));
+  const sw = viewW * (tall ? 1.0 : 0.86), sh = tall ? viewH * 0.2 : sw * H / 1720, used = Math.min(W, Math.round(H * sw / sh)); // tall picture: a thicker strip from edge to edge, showing fewer seconds so the notes are larger
   const geo = new THREE.PlaneGeometry(sw, sh, 48, 1), pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setZ(i, -0.9 * (pos.getX(i) / (sw / 2)) ** 2);
+  const bow = sw * (tall ? 0.022 : 0.077); // how far the ends curve away; much flatter in the tall picture, where the same curve looked like an arch
+  for (let i = 0; i < pos.count; i++) pos.setZ(i, -bow * (pos.getX(i) / (sw / 2)) ** 2);
   tex.repeat.set(used / W, 1);
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false }));
-  mesh.position.set(0, viewH / 2 - viewH * 0.05 - sh / 2, -10); mesh.rotation.x = -0.1; mesh.renderOrder = 20; mesh.frustumCulled = false;
+  mesh.position.set(0, viewH / 2 - viewH * 0.05 - sh / 2, -10); mesh.rotation.x = tall ? -0.04 : -0.1; mesh.renderOrder = 20; mesh.frustumCulled = false;
   camera.add(mesh);
 
   const colors = T.notes, led = T.led || T.trim, LEFT = 150; // LEFT: where the clefs and key signature end
@@ -137,11 +140,30 @@ export function buildScore(T, camera) {
     }
     g.globalAlpha = 1;
   }
+  const isLanding = (list, t) => { let lo = 0, hi = list.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (list[m].t <= t) lo = m; else hi = m - 1; } return list[lo].t <= t && t - list[lo].t < 0.05; };
   const hex = (c) => { const n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
   const mix = (a, b, k) => { const x = hex(a), y = hex(b); return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * k)).join(',')})`; };
 
+  // A dot of light per hand that hops along the music: it comes down on each note exactly as the note is played.
+  // The notes come to the line of light, so the dot stays above the line and the hop is up and down.
+  function dotY(list, t, staff) {
+    if (!list.length) return (staff ? BASS : TREBLE) - 2 * SP - 13;
+    let lo = 0, hi = list.length - 1;
+    if (t < list[0].t) { const u = Math.min(1, (list[0].t - t) / 1.2); return list[0].y - 13 - 46 * Math.sin(u * Math.PI / 2); } // falling onto the first note
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (list[m].t <= t) lo = m; else hi = m - 1; }
+    const a = list[lo], b = list[lo + 1];
+    if (!b) { const age = t - a.t; return a.y - 13 - 40 * Math.exp(-age * 2.4) * Math.abs(Math.sin(age * 6)); } // the last note: a few small bounces, then still
+    const gap = b.t - a.t, u = (t - a.t) / gap, height = Math.min(70, 16 + 60 * gap); // longer waits, higher hops
+    return a.y + (b.y - a.y) * u - 13 - height * 4 * u * (1 - u);
+  }
+  function drawDot(x, y, color, squash) {
+    g.shadowColor = color; g.shadowBlur = 18; g.fillStyle = color;
+    g.beginPath(); g.ellipse(x, y + 10 * squash * 0.4, 10.5 * (1 + 0.25 * squash), 10.5 * (1 - 0.3 * squash), 0, 0, Math.PI * 2); g.fill();
+    g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,0.85)'; g.beginPath(); g.arc(x - 3.2, y - 3.4, 3.1, 0, 7); g.fill();
+  }
+
   // t = music time (or the clock, when playing live). trail = notes being played live, or null to show the piece.
-  function update(t, piece, trail) {
+  function update(t, piece, trail, dots) {
     if (!trail && piece && of !== piece) { prepared = prepare(piece); of = piece; }
     const w = used, live = !!trail, now = Math.round(w * (live ? 0.8 : 0.36)), sf = live ? 0 : prepared && piece ? prepared.sf : 0;
     g.clearRect(0, 0, W, H);
@@ -180,6 +202,25 @@ export function buildScore(T, camera) {
           const age = t - n.t0, held = n.t1 == null, lit = held ? Math.max(0.75, 1 - age * 0.5) : Math.max(0, 0.75 - (t - n.t1) * 1.2);
           mark({ t: n.t0, dur: 0, beats: 1, staff: n.pitch < 60 ? 1 : 0, heads: [spell(n.pitch)], vel: n.vel, grace: false, color: n.pitch < 60 ? 1 : 0 }, x, lit, age, fadeAt(x) * Math.max(0.3, 1 - age * 0.12));
         }
+      }
+    }
+    if (dots && (live || (piece && prepared))) {
+      for (const staff of [0, 1]) {
+        let y, squash = 0;
+        if (live) { // live: the dot jumps each time a key of that hand is struck
+          let last = null;
+          for (const n of trail) if ((n.pitch < 60 ? 1 : 0) === staff && (!last || n.t0 > last.t0)) last = n;
+          const restY = (staff ? BASS : TREBLE) - 2 * SP;
+          if (!last) y = restY - 13;
+          else { const age = t - last.t0, top = Math.max(30, Math.min(H - 30, stepY(speller(0)(last.pitch).step, staff))); y = top - 13 - 52 * Math.exp(-age * 2.2) * Math.abs(Math.sin(age * 6.5)); squash = Math.max(0, 1 - age * 12); }
+        } else {
+          const list = prepared.landings[staff];
+          y = dotY(list, t, staff);
+          squash = list.length && isLanding(list, t) ? 1 : 0; // flattens for an instant as it lands
+        }
+        const color = colors[staff % colors.length], x = now;
+        for (let k = 3; k >= 1; k--) { const yy = live ? y : dotY(prepared.landings[staff], t - k * 0.028, staff); g.globalAlpha = 0.16 * (4 - k) / 3; g.fillStyle = color; g.beginPath(); g.arc(x, yy, 9, 0, 7); g.fill(); } // a short tail
+        g.globalAlpha = 1; drawDot(x, y, color, squash);
       }
     }
     // clefs and key signature stay at the left; the line of light marks "now"

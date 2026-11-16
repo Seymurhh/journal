@@ -4,7 +4,7 @@ import * as THREE from '../vendor/three.min.js?v=7';
 import { isBlack, noteName } from './midi.js?v=10';
 import { buildFlight, voicesFromPiece } from './flight.js?v=13';
 import { buildDancer } from './dancer.js?v=9';
-import { buildScore } from './score.js?v=11';
+import { buildScore } from './score.js?v=15';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -29,7 +29,7 @@ void main() {
   float near = -vW.z;                                   // distance still to travel to the keys
   if (near < 0.1) discard;
   float d = vUv.y * uLen, e = uLen - d;                 // distance from the leading end, and from the trailing end
-  float pour = 1.0 + 1.2 * smoothstep(1.5, 0.1, near);
+  float pour = 1.0 + 0.5 * smoothstep(1.5, 0.1, near);
   float fade = smoothstep(uFar, uFar * 0.55, near);
   if (uKind > 0.5) {
     // A trail of light: a round bright head that reaches the key first, and a straight tail that thins and dims behind it.
@@ -42,7 +42,7 @@ void main() {
     float head = exp(-2.2 * (hd * hd + x * x) / (hr * hr));
     float I = max(tail, head);
     if (I < 0.01) discard;
-    vec3 c = uColor * I * 1.15 + vec3(1.0) * pow(head, 3.0) * 0.55 + uColor * pow(tail, 4.0) * 0.3;
+    vec3 c = uColor * I * 0.95 + vec3(1.0) * pow(head, 3.0) * 0.28 + uColor * pow(tail, 4.0) * 0.2;
     gl_FragColor = vec4(c * uGain * pour * fade, 1.0);
     return;
   }
@@ -95,7 +95,7 @@ export function createStage(canvas) {
   const clip = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]; // hide the part of a note that has passed the keys
   const dot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const beamTex = canvasTex(32, 128, (g, w, h) => { const r = g.createLinearGradient(0, h, 0, 0); r.addColorStop(0, 'rgba(255,255,255,.95)'); r.addColorStop(0.25, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  const S = { notes: 'trails', ribbon: true, score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
+  const S = { notes: 'trails', ribbon: true, dots: true, score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
   const labelMats = new Map(), ray = new THREE.Raycaster(), point = new THREE.Vector2();
 
   function labelMaterial(pitch, T) {
@@ -242,7 +242,7 @@ export function createStage(canvas) {
       const ci = colorIndex(n), tint = new THREE.Color(T.notes[ci % T.notes.length]);
       let mesh, twin;
       if (water) {
-        const half = (trails ? 1.35 : 1) * (black ? 0.3 : 0.46) * (0.62 + 0.38 * n.vel), m = waterMat(tint, half, 0.75 + 0.75 * n.vel), m2 = waterMat(tint, half, 0.22 + 0.2 * n.vel);
+        const half = (trails ? 1.35 : 1) * (black ? 0.3 : 0.46) * (0.62 + 0.38 * n.vel), m = waterMat(tint, half, 0.6 + 0.5 * n.vel), m2 = waterMat(tint, half, 0.16 + 0.14 * n.vel);
         const shown = trails ? Math.max(len, 1.1) : len; // a trail needs room for its round head, however short the note
         m.uniforms.uLen.value = m2.uniforms.uLen.value = shown; m.uniforms.uPhase.value = m2.uniforms.uPhase.value = rnd(idx, 5) * 6.28;
         mesh = new THREE.Mesh(strip, m); twin = new THREE.Mesh(strip, m2);
@@ -326,7 +326,7 @@ export function createStage(canvas) {
       q.mesh.visible = q.twin.visible = true;
       if (q.water) { // live notes run the other way (away from the keys), so the strip is turned round: its round head leads
         const half = w / 2;
-        for (const [m, gain] of [[q.mesh, 0.75 + 0.75 * n.vel], [q.twin, 0.22 + 0.2 * n.vel]]) { const u = m.material.uniforms; u.uLen.value = len; u.uHalf.value = half; u.uPlane.value = half + 0.26; u.uGain.value = gain; u.uColor.value.copy(color); u.uPhase.value = n.pitch; m.scale.set(2 * (half + 0.26), 1, -len); }
+        for (const [m, gain] of [[q.mesh, 0.6 + 0.5 * n.vel], [q.twin, 0.16 + 0.14 * n.vel]]) { const u = m.material.uniforms; u.uLen.value = len; u.uHalf.value = half; u.uPlane.value = half + 0.26; u.uGain.value = gain; u.uColor.value.copy(color); u.uPhase.value = n.pitch; m.scale.set(2 * (half + 0.26), 1, -len); }
         q.mesh.position.set(KX[n.pitch], y, z); q.twin.position.set(KX[n.pitch], 2 * DECK - y, z);
         continue;
       }
@@ -414,11 +414,11 @@ export function createStage(canvas) {
       const k = S.keys[p], b = S.beams[p], a = press.get(p);
       k.rotation.x = a ? k.userData.max * a.a : 0;
       if (a) {
-        k.material.emissive.copy(a.color); k.material.emissiveIntensity = T.glow * (0.7 + 1.1 * a.vel) * a.a;
-        k.material.color.copy(k.userData.base).lerp(a.color, 0.55 * a.a);
+        k.material.emissive.copy(a.color); k.material.emissiveIntensity = T.glow * (0.4 + 0.6 * a.vel) * a.a;
+        k.material.color.copy(k.userData.base).lerp(a.color, 0.6 * a.a);
       } else { k.material.emissiveIntensity = 0; k.material.color.copy(k.userData.base); }
       b.visible = !!a && S.effects;
-      if (b.visible) { b.material.color.copy(a.color); b.material.opacity = (T.dim ? 0.3 : 0.75) * a.a * (0.45 + 0.55 * a.vel); b.scale.set(isBlack(p) ? 0.9 : 1.3, 2.5 + 6 * a.vel, 1); b.rotation.y = S.camera === 'side' ? -1.1 : 0; }
+      if (b.visible) { b.material.color.copy(a.color); b.material.opacity = (T.dim ? 0.2 : 0.3) * a.a * (0.45 + 0.55 * a.vel); b.scale.set(isBlack(p) ? 0.9 : 1.3, 2.5 + 6 * a.vel, 1); b.rotation.y = S.camera === 'side' ? -1.1 : 0; }
     }
     let ri = 0;
     for (const f of S.effects ? fx : []) {
@@ -426,18 +426,18 @@ export function createStage(canvas) {
       if (age < 0 || age > 0.8 || ri >= S.rings.length) continue;
       const r = S.rings[ri++], k = age / 0.8, size = 1 + k * (5 + 7 * f.vel);
       r.visible = true; r.position.set(KX[f.pitch], DECK + 0.02, -0.9 - k * 1.5); r.scale.set(size, 1, size * 1.5);
-      r.material.color.copy(f.color); r.material.opacity = (1 - k) ** 1.5 * (0.25 + 0.6 * f.vel) * (T.dim ? 0.6 : 1);
+      r.material.color.copy(f.color); r.material.opacity = (1 - k) ** 1.5 * (0.25 + 0.6 * f.vel) * 0.55;
     }
     for (; ri < S.rings.length; ri++) S.rings[ri].visible = false;
     const lit = [...press].map(([p, a]) => ({ p, a, s: a.a * a.vel })).sort((x, y) => y.s - x.s);
     S.flash.forEach((l, i) => {
       const h = lit[i];
-      l.intensity = h ? (T.dim ? 9 : 26) * h.s : 0;
+      l.intensity = h ? (T.dim ? 6 : 9) * h.s : 0;
       if (h) { l.color.copy(h.a.color); l.position.set(KX[h.p], 2.6, -1.2); }
     });
-    S.strike.material.emissiveIntensity = T.glow * (1.5 + Math.min(2, energy * 0.6));
+    S.strike.material.emissiveIntensity = T.glow * (1.1 + Math.min(1, energy * 0.3));
     S.score.mesh.visible = S.ribbon;
-    if (S.ribbon) S.score.update(t, S.piece, live ? trail : null);
+    if (S.ribbon) S.score.update(t, S.piece, live ? trail : null, S.dots);
     composer.render();
   }
 
@@ -463,6 +463,7 @@ export function createStage(canvas) {
     },
     setLabels(on) { S.labels = on; },
     setRibbon(on) { S.ribbon = on; },
+    setDots(on) { S.dots = on; },
     setNotes(kind) { S.notes = ['bars', 'water'].includes(kind) ? kind : 'trails'; S.scene = null; },
     setEffects(on) { S.effects = on; },
     setMotion(on) { S.motion = on; },
