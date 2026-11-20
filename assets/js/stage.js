@@ -5,7 +5,7 @@ import { isBlack, noteName } from './midi.js?v=11';
 import { buildFlight, voicesFromPiece } from './flight.js?v=13';
 import { buildDancer } from './dancer.js?v=9';
 import { buildScore } from './score.js?v=19';
-import { buildSheet } from './sheet.js?v=1';
+import { buildSheet } from './sheet.js?v=3';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -74,6 +74,44 @@ const KX = Array.from({ length: 128 }, (_, p) => (p >= A0 && p <= C8 ? keyX(p) :
 const rnd = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); }; // repeatable "random"
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
+// Depth of field, as a camera lens gives it: sharp where the music is being played, softer nearer and further away.
+// The distance of each pixel is where its line of sight meets the glass the music lies on (good enough for a scene
+// that is nearly all on that plane, and much cheaper than reading the depth buffer). Each pixel gathers its
+// neighbours on a spiral; a neighbour only spreads into it if its own blur is wide enough to reach.
+const DOF_FRAG = `
+uniform sampler2D tDiffuse; uniform vec2 uRes; uniform mat4 uInvPV; uniform vec3 uCam; uniform float uFocus, uRange, uMax;
+varying vec2 vUv;
+float blurAt(vec2 uv) {
+  vec4 p = uInvPV * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 dir = normalize(p.xyz / p.w - uCam);
+  float d = dir.y < -0.0001 ? -uCam.y / dir.y : 1000.0;
+  float c = clamp((abs(d - uFocus) - 2.0) / uRange, 0.0, 1.0);
+  return c * c * uMax;
+}
+void main() {
+  vec4 sum = texture2D(tDiffuse, vUv);
+  float r = blurAt(vUv), w = 1.0;
+  if (r > 0.6) {
+    for (int i = 0; i < 36; i++) {
+      float a = float(i) * 2.39996323, rr = sqrt((float(i) + 0.5) / 36.0) * r;
+      vec2 uv2 = vUv + vec2(cos(a), sin(a)) * rr / uRes;
+      float k = clamp(blurAt(uv2) - rr + 1.0, 0.0, 1.0);
+      sum += texture2D(tDiffuse, uv2) * k; w += k;
+    }
+  }
+  gl_FragColor = sum / w;
+}`;
+function depthOfField() {
+  const material = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uInvPV: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() }, uFocus: { value: 20 }, uRange: { value: 9 }, uMax: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: DOF_FRAG, depthTest: false, depthWrite: false });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  quad.frustumCulled = false;
+  return { enabled: false, needsSwap: true, clear: false, renderToScreen: false, material,
+    setSize(w, h) { material.uniforms.uRes.value.set(w, h); },
+    render(renderer, writeBuffer, readBuffer) { material.uniforms.tDiffuse.value = readBuffer.texture; renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer); renderer.render(quad, cam); },
+    dispose() { material.dispose(); quad.geometry.dispose(); } };
+}
+
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
@@ -88,10 +126,12 @@ export function createStage(canvas) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
   const camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.5, 600);
   const env = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture;
-  const composer = new THREE.EffectComposer(renderer);
+  // Drawn first into a multisampled picture, so thin lines (staff lines, stems) are smooth instead of jagged.
+  const composer = new THREE.EffectComposer(renderer, new THREE.WebGLRenderTarget(960, 540, { type: THREE.HalfFloatType, samples: 4 }));
   const renderPass = new THREE.RenderPass(new THREE.Scene(), camera);
   const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(960, 540), 0.6, 0.5, 0.8);
-  composer.addPass(renderPass); composer.addPass(bloom); composer.addPass(new THREE.OutputPass());
+  const dof = depthOfField();
+  composer.addPass(renderPass); composer.addPass(dof); composer.addPass(bloom); composer.addPass(new THREE.OutputPass());
 
   const clip = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]; // hide the part of a note that has passed the keys
   const dot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
@@ -118,9 +158,10 @@ export function createStage(canvas) {
       renderPass.scene = S.scene = S.old = S.dancer.scene;
       return;
     }
+    dof.enabled = S.view === 'sheet';
     if (S.view === 'sheet') {
       S.sheet = buildSheet(THEMES[S.theme], { canvasTex, dot, env }, S.piece);
-      [bloom.strength, bloom.radius, bloom.threshold] = [0.75, 0.5, 0.72];
+      [bloom.strength, bloom.radius, bloom.threshold] = [0.7, 0.55, 0.78];
       renderer.toneMappingExposure = 1;
       renderPass.scene = S.scene = S.old = S.sheet.scene;
       return;
@@ -296,7 +337,11 @@ export function createStage(canvas) {
     if (!S.scene) build();
     if (S.view === 'dancer') { S.dancer.render(camera, S.music, { effects: S.effects, motion: S.motion, style: S.dance }); composer.render(); return; }
     if (S.view === 'sheet') {
-      S.sheet.render(t, camera, { live: live ? S.trail || [] : null, effects: S.effects, motion: S.motion, paths: S.paths });
+      const view = S.sheet.render(t, camera, { live: live ? S.trail || [] : null, effects: S.effects, motion: S.motion, paths: S.paths });
+      camera.updateMatrixWorld();
+      const u = dof.material.uniforms, size = renderer.getDrawingBufferSize(new THREE.Vector2());
+      u.uInvPV.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse); u.uCam.value.copy(camera.position);
+      u.uFocus.value = view.focus; u.uRange.value = view.range; u.uMax.value = S.effects ? 0.0075 * Math.min(size.x, size.y) : 0;
       composer.render();
       return;
     }

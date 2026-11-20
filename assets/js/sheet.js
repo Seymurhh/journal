@@ -16,8 +16,8 @@ const MID = [TB + 2, 2];                       // the middle line of each staff
 const TOP = [TB + 4, 4], BOTTOM = [TB, 0];
 const pageY = (step, staff) => (staff ? (step - 18) / 2 : TB + (step - 30) / 2); // step = octave * 7 + letter; E4 = 30, G2 = 18
 const VALUES = [0.125, 0.25, 0.375, 0.5, 0.75, 1, 1.5, 2, 3, 4]; // written lengths in beats
+const SPACE = 3.2;                             // staff spaces per beat (long notes get less, by a power law, as in print)
 const INK = 0.03;                              // how far the printing stands above the glass
-const TRAIL = 2.4, N = 170;                    // seconds of light path behind each hand, and its number of points
 const rnd = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
 const smooth = (u) => { u = Math.min(1, Math.max(0, u)); return u * u * (3 - 2 * u); };
 const W = (x, y, h = INK) => new THREE.Vector3(x, h, -y); // page (x, y) to the world: the page lies flat, its top away from the viewer
@@ -82,7 +82,7 @@ function engrave(piece) {
   for (let i = 0; i < times.length; i++) {
     if (i) {
       const beats = (times[i] - times[i - 1]) / beatAt(times[i - 1]);
-      let w = Math.max(accAt[i] ? 2.7 : 2.0, 3.9 * Math.pow(Math.max(beats, 0.125), 0.62));
+      let w = Math.max(accAt[i] ? 2.6 : 1.9, SPACE * Math.pow(Math.max(beats, 0.125), 0.62));
       if (accAt[i]) w += 0.6;
       while (b < inner.length && inner[b] <= times[i] + 0.03) { if (inner[b] > times[i - 1] + 0.03) w += 1.7; b++; }
       x += w;
@@ -90,7 +90,7 @@ function engrave(piece) {
     X[i] = x;
   }
   const last = times.length - 1;
-  const rateA = 3.9 / beatAt(times[0]), rateB = 3.9 / beatAt(times[last]);
+  const rateA = SPACE / beatAt(times[0]), rateB = SPACE / beatAt(times[last]);
   const xOf = (t) => {
     if (t <= times[0]) return X[0] - (times[0] - t) * rateA;
     if (t >= times[last]) return X[last] + (t - times[last]) * rateB;
@@ -107,7 +107,7 @@ function engrave(piece) {
     const j = times.findIndex((s) => s >= t - 0.03);
     barX.push(Math.abs(times[j] - t) < 0.03 ? X[j] - (accAt[j] ? 2.3 : 1.5) : xOf(t));
   }
-  if (finalX == null) { const c = chords.filter((k) => k.ti === last); finalX = X[last] + Math.max(4, Math.max(...c.map((k) => k.v)) * 3.9 * 0.8); }
+  if (finalX == null) { const c = chords.filter((k) => k.ti === last); finalX = X[last] + Math.max(4, Math.max(...c.map((k) => k.v)) * SPACE * 0.8); }
 
   // beams: eighths and shorter that follow one another in the same voice, grouped by the beat
   // (eighths by the half bar in 2/4 and 4/4, by the dotted beat in 6/8, 9/8 and 12/8)
@@ -144,45 +144,61 @@ function engrave(piece) {
   return { sf, chords, groups, barX, finalX, xOf, level, start: START, keyW, meter: shown, landings, end: X[last] };
 }
 
+
 // ---------- the picture ----------
+const R = 0.38;                        // ball radius, in staff spaces
+const REST = 0.16 + R;                 // height of a ball's centre at the moment it touches a note
+const G = 60, HMAX = 2.4;              // gravity (staff spaces per second²) and the highest a hop may go
+const TAIL = 1.0, NT = 110;            // the thin tail of light: seconds, points
+const DT = 1 / 110, LIFE = 0.9;        // comet sparks: one shed every DT seconds, each glowing for LIFE seconds
+const HIT = 0.75, HITN = 22;           // sparks thrown up where a ball lands
+const DUST = 260, POOL = 12;
+const hopHeight = (gap) => { const h = (G * gap * gap) / 8; return HMAX * (1 - Math.exp(-h / HMAX)); }; // a true gravity arc, capped softly for long notes
+
 export function buildSheet(T, tools, piece) {
   const { canvasTex, dot, env } = tools, scene = new THREE.Scene();
   scene.background = canvasTex(4, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, T.bg[0]); r.addColorStop(1, T.bg[1]); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  scene.fog = new THREE.Fog(T.fog, 34, 92);
+  scene.fog = new THREE.Fog(T.fog, 36, 115);
   scene.environment = env; scene.environmentIntensity = 0.12;
+  const WHITE = new THREE.Color('#ffffff');
   const hands = [new THREE.Color(T.notes[0]), new THREE.Color(T.notes[1 % T.notes.length])];
   const inkColor = new THREE.Color('#e9dcc0').lerp(new THREE.Color(T.trim), 0.12);
   const S = piece && piece.notes.length ? engrave(piece) : null;
+  const flat = (geo) => geo.rotateX(-Math.PI / 2);
+  const additive = (extra = {}) => ({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false, ...extra });
 
-  // the glass floor, and the light
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshPhysicalMaterial({ color: '#000000', roughness: 0.45, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.5 }));
-  floor.scale.set(4000, 1, 400); floor.position.set(0, 0, -60); scene.add(floor);
+  // The score is printed on a long slab of dark glass; a polished floor lies far below it.
+  const x0 = -40, x1 = (S ? S.finalX : 60) + 60;
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#05060a', roughness: 0.42, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.32, transparent: true, opacity: 0.84 });
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.6, 25), glass);
+  slab.position.set((x0 + x1) / 2, -0.3, -7.5); slab.renderOrder = 1; scene.add(slab);
+  const edgeMat = new THREE.MeshBasicMaterial({ color: inkColor.clone().multiplyScalar(0.32) });
+  for (const z of [5, -20]) { const e = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.025, 0.05), edgeMat); e.position.set((x0 + x1) / 2, 0, z); scene.add(e); }
+  const floor = new THREE.Mesh(flat(new THREE.PlaneGeometry(1, 1)), new THREE.MeshStandardMaterial({ color: '#030305', roughness: 0.45, metalness: 0.3 }));
+  floor.scale.set(4000, 1, 600); floor.position.set(0, -5, -60); scene.add(floor);
   scene.add(new THREE.AmbientLight('#ffffff', 0.18));
-  const keyLight = new THREE.DirectionalLight('#fff1dc', 0.45); keyLight.position.set(-20, 30, 25); scene.add(keyLight, keyLight.target);
-  const lamp = new THREE.PointLight('#fff4e2', 9, 26, 1.6); scene.add(lamp); // the reading lamp that travels with the music
-  const lanterns = hands.map((c) => { const l = new THREE.PointLight(c, 0, 9, 1.6); scene.add(l); return l; });
+  const keyLight = new THREE.DirectionalLight('#fff1dc', 0.45); scene.add(keyLight, keyLight.target);
+  const lamp = new THREE.PointLight('#fff4e2', 5, 26, 1.6); scene.add(lamp);      // a reading lamp that travels with the music
+  const backLight = new THREE.PointLight('#ffe9c8', 7, 70, 1.3); scene.add(backLight); // far ahead: catches the glass edge and the balls' rims
 
   const ink = new THREE.MeshStandardMaterial({ color: inkColor, roughness: 0.38, metalness: 0.55, emissive: inkColor, emissiveIntensity: 0.32, side: THREE.DoubleSide });
   const bead = new THREE.MeshPhysicalMaterial({ color: inkColor, roughness: 0.2, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08, emissive: inkColor, emissiveIntensity: 0.18 });
-  const glowMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false });
+  const glowMat = new THREE.MeshBasicMaterial({ color: '#ffffff', ...additive() });
 
-  // shapes, made in page coordinates and laid flat
-  const flat = (geo) => geo.rotateX(-Math.PI / 2);
-  const bar = flat(new THREE.PlaneGeometry(1, 1)); // a unit printed rectangle; scaled for stems, beams, lines
+  // ---- the printed music ----
+  const bar = flat(new THREE.PlaneGeometry(1, 1));
   const solidHead = new THREE.SphereGeometry(0.5, 28, 14).scale(1.24, 0.42, 0.96).rotateY(0.36).translate(0, 0.12, 0);
   const openHead = new THREE.TorusGeometry(0.4, 0.12, 10, 36).scale(1.32, 0.98, 0.9).rotateX(-Math.PI / 2).rotateY(0.36).translate(0, 0.1, 0);
   const wholeHead = new THREE.TorusGeometry(0.44, 0.15, 10, 36).scale(1.38, 0.9, 0.9).rotateX(-Math.PI / 2).translate(0, 0.1, 0);
   const dotGeo = new THREE.SphereGeometry(0.17, 12, 8).scale(1, 0.6, 1);
   const flagShape = (() => { const s = new THREE.Shape(); s.moveTo(0, 0); s.bezierCurveTo(0.15, -0.9, 1.25, -1.2, 0.95, -2.6); s.bezierCurveTo(1.05, -1.7, 0.4, -1.25, 0, -1.1); s.lineTo(0, 0); return flat(new THREE.ShapeGeometry(s, 12)); })();
-
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), SC = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
   const lists = { line: [], solid: [], open: [], whole: [], dot: [], flagUp: [], flagDown: [], sharp: [], flat: [], natural: [] };
-  const rect = (x0, y0, x1, y1) => lists.line.push([(x0 + x1) / 2, (y0 + y1) / 2, Math.max(0.001, Math.abs(x1 - x0)), Math.max(0.001, Math.abs(y1 - y0)), 0]);
-  const slab = (x0, y0, x1, y1, thick) => lists.line.push([(x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0), thick, Math.atan2(y1 - y0, x1 - x0)]); // a sloping beam
-  const glowHeads = []; // [list name, index, chord]
-
+  const rect = (a0, b0, a1, b1) => lists.line.push([(a0 + a1) / 2, (b0 + b1) / 2, Math.max(0.001, Math.abs(a1 - a0)), Math.max(0.001, Math.abs(b1 - b0)), 0]);
+  const slabLine = (a0, b0, a1, b1, thick) => lists.line.push([(a0 + a1) / 2, (b0 + b1) / 2, Math.hypot(a1 - a0, b1 - b0), thick, Math.atan2(b1 - b0, a1 - a0)]);
+  const glowHeads = [];
   if (S) {
-    const { chords, groups, level } = S;
+    const { groups, level } = S;
     const stemX = (c, d) => c.x + d * 0.6;
     const dirOf = (cs) => {
       const v = cs[0].voice;
@@ -192,17 +208,15 @@ export function buildSheet(T, tools, piece) {
       return hi > lo ? -1 : 1;
     };
     const drawHeads = (c, d) => {
-      // heads a step apart sit on either side of the stem
       const order = d > 0 ? c.heads : [...c.heads].reverse();
       let prev = null;
-      for (const h of order) { h.dx = prev && Math.abs(h.step - prev.step) === 1 && !prev.dx ? d * 1.18 : 0; prev = h; }
+      for (const h of order) { h.dx = prev && Math.abs(h.step - prev.step) === 1 && !prev.dx ? d * 1.18 : 0; prev = h; } // a step apart: either side of the stem
       const kind = c.v >= 4 ? 'whole' : c.v >= 2 ? 'open' : 'solid', dotted = [0.375, 0.75, 1.5, 3].includes(c.v);
       let accCol = 0, lastAccY = Infinity;
       for (const h of [...c.heads].reverse()) {
         const hx = c.x + h.dx;
-        glowHeads.push([kind, lists[kind].length, c]); lists[kind].push([hx, h.y]);
+        glowHeads.push([kind, c]); lists[kind].push([hx, h.y]);
         if (dotted) lists.dot.push([c.x + 1.05 + Math.max(0, ...c.heads.map((k) => k.dx)), Number.isInteger(h.y) ? h.y + 0.5 : h.y]);
-        // ledger lines
         for (let ly = BOTTOM[c.staff] - 1; ly >= h.y - 0.01; ly--) rect(hx - 0.95, ly - 0.05, hx + 0.95, ly + 0.05);
         for (let ly = TOP[c.staff] + 1; ly <= h.y + 0.01; ly++) rect(hx - 0.95, ly - 0.05, hx + 0.95, ly + 0.05);
         if (h.acc) {
@@ -214,7 +228,7 @@ export function buildSheet(T, tools, piece) {
     for (const g of groups) {
       const d = dirOf(g), lv = g.map((c) => level(c.v));
       g.forEach((c) => drawHeads(c, d));
-      if (g[0].v >= 4) continue; // whole notes have no stem
+      if (g[0].v >= 4) continue;
       const far = (c) => (d > 0 ? c.heads[0].y : c.heads[c.heads.length - 1].y), near = (c) => (d > 0 ? c.heads[c.heads.length - 1].y : c.heads[0].y);
       if (g.length === 1) {
         const c = g[0], extra = c.v < 1 ? (lv[0] - 1) * 0.6 : 0;
@@ -225,15 +239,14 @@ export function buildSheet(T, tools, piece) {
         if (c.v < 1) for (let k = 0; k < lv[0]; k++) lists[d > 0 ? 'flagUp' : 'flagDown'].push([sx, end - d * k * 0.8]);
         continue;
       }
-      // a beam along the stem ends, sloping gently with the melody, far enough out for every stem
       const deep = Math.max(...lv), xs = g.map((c) => stemX(c, d)), f = g[0], l = g[g.length - 1];
-      const y0 = near(f) + d * 3.5, y1 = near(l) + d * 3.5, slope = Math.max(-0.16, Math.min(0.16, (y1 - y0) / (xs[xs.length - 1] - xs[0]) * 0.5));
+      const y0 = near(f) + d * 3.5, y1 = near(l) + d * 3.5, slope = Math.max(-0.16, Math.min(0.16, ((y1 - y0) / (xs[xs.length - 1] - xs[0])) * 0.5));
       let base = y0;
       g.forEach((c, i) => { const need = near(c) + d * (3.0 + (deep - 1) * 0.8), at = base + slope * (xs[i] - xs[0]); if ((need - at) * d > 0) base += need - at; });
       const at = (x) => base + slope * (x - xs[0]);
       g.forEach((c, i) => rect(xs[i] - 0.065, Math.min(far(c), at(xs[i])), xs[i] + 0.065, Math.max(far(c), at(xs[i]))));
       for (let L = 1; L <= deep; L++) {
-        const off = -d * (L - 1) * 0.8, seg = (xa, xb) => slab(xa, at(xa) + off - d * 0.25, xb, at(xb) + off - d * 0.25, 0.5);
+        const off = -d * (L - 1) * 0.8, seg = (xa, xb) => slabLine(xa, at(xa) + off - d * 0.25, xb, at(xb) + off - d * 0.25, 0.5);
         if (L === 1) { seg(xs[0] - 0.065, xs[xs.length - 1] + 0.065); continue; }
         for (let i = 0; i < g.length; i++) {
           if (lv[i] < L) continue;
@@ -243,27 +256,25 @@ export function buildSheet(T, tools, piece) {
       }
     }
     for (const bx of S.barX) rect(bx - 0.07, 0, bx + 0.07, TOP[0]);
-    rect(S.finalX - 0.75, 0, S.finalX - 0.6, TOP[0]); rect(S.finalX - 0.3, 0, S.finalX + 0.12, TOP[0]); // the closing double bar
-    // key signature
+    rect(S.finalX - 0.75, 0, S.finalX - 0.6, TOP[0]); rect(S.finalX - 0.3, 0, S.finalX + 0.12, TOP[0]);
     for (let i = 0; i < Math.abs(S.sf); i++) for (const staff of [0, 1]) lists[S.sf < 0 ? 'flat' : 'sharp'].push([5.6 + i * 0.85, pageY(SIG[S.sf < 0 ? 'flat' : 'sharp'][staff ? 'bass' : 'treble'][i], staff)]);
   }
   const left = 0.6, right = S ? S.finalX : 60;
-  rect(left - 0.07, 0, left + 0.07, TOP[0]); // the line that joins the two staves at the start
+  rect(left - 0.07, 0, left + 0.07, TOP[0]);
   for (const b of [TB, 0]) for (let i = 0; i < 5; i++) rect(left, b + i - 0.045, right, b + i + 0.045);
-
-  // turn the lists into instanced meshes
+  const printed = [];
   const inst = (geo, mat, items, place) => {
     const m = new THREE.InstancedMesh(geo, mat, Math.max(1, items.length));
     m.count = items.length;
     items.forEach((it, i) => { place(it); m.setMatrixAt(i, M); });
-    m.frustumCulled = false; scene.add(m);
+    m.frustumCulled = false; scene.add(m); printed.push(m);
     return m;
   };
   inst(bar, ink, lists.line, ([x, y, w, h, a]) => M.compose(V.set(x, INK, -y), Q.setFromAxisAngle(UP, a), SC.set(w, 1, h)));
   const headPlace = ([x, y]) => M.compose(V.set(x, INK, -y), Q.identity(), SC.set(1, 1, 1));
-  const heads = {}, glows = {};
+  const glows = {};
   for (const [kind, geo] of [['solid', solidHead], ['open', openHead], ['whole', wholeHead]]) {
-    heads[kind] = inst(geo, bead, lists[kind], headPlace);
+    inst(geo, bead, lists[kind], headPlace);
     glows[kind] = inst(geo, glowMat, lists[kind], ([x, y]) => M.compose(V.set(x, INK + 0.02, -y), Q.identity(), SC.set(1.14, 1.3, 1.14)));
     glows[kind].instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, lists[kind].length) * 3), 3);
     glows[kind].renderOrder = 3;
@@ -271,7 +282,6 @@ export function buildSheet(T, tools, piece) {
   inst(dotGeo, bead, lists.dot, ([x, y]) => M.compose(V.set(x, INK + 0.05, -y), Q.identity(), SC.set(1, 1, 1)));
   inst(flagShape, ink, lists.flagUp, ([x, y]) => M.compose(V.set(x - 0.06, INK, -y), Q.identity(), SC.set(1, 1, 1)));
   inst(flagShape, ink, lists.flagDown, ([x, y]) => M.compose(V.set(x - 0.06, INK, -y), Q.identity(), SC.set(1, 1, -1)));
-  // accidentals and the signs at the start of the staves are printed from a small sheet of letters
   const signs = canvasTex(384, 128, (g) => { g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '96px serif'; ['♯', '♭', '♮'].forEach((s, i) => g.fillText(s, 64 + i * 128, s === '♭' ? 50 : 64)); });
   const signMat = new THREE.MeshBasicMaterial({ map: signs, color: inkColor, transparent: true, depthWrite: false, alphaTest: 0.1 });
   ['sharp', 'flat', 'natural'].forEach((name, i) => {
@@ -279,7 +289,6 @@ export function buildSheet(T, tools, piece) {
     for (let k = 0; k < uv.count; k++) uv.setX(k, (i + uv.getX(k)) / 3);
     inst(geo, signMat, lists[name], ([x, y]) => M.compose(V.set(x, INK + 0.01, -y), Q.identity(), SC.set(1.3, 1, 2.2)));
   });
-  // clefs and time signature: drawn once onto a card at the start of the staves
   const PX = 48, cardW = 12, cardTop = TOP[0] + 3.5, cardBottom = -3.5;
   const clefOK = (() => { const c = document.createElement('canvas'); c.width = c.height = 40; const x = c.getContext('2d', { willReadFrequently: true }); const ink2 = (ch) => { x.clearRect(0, 0, 40, 40); x.font = '30px serif'; x.fillText(ch, 4, 32); return x.getImageData(0, 0, 40, 40).data.reduce((s, v, i) => s + (i % 4 === 3 ? v : 0), 0); }; const a = ink2('\u{1D11E}'), b2 = ink2('\u{1D122}'), box = ink2('\u{10FFFE}'); return a > 2000 && b2 > 1500 && Math.abs(a - box) > 200 && Math.abs(a - b2) > 200; })();
   const card = canvasTex(cardW * PX, (cardTop - cardBottom) * PX, (g) => {
@@ -296,29 +305,45 @@ export function buildSheet(T, tools, piece) {
   const cardMesh = new THREE.Mesh(flat(new THREE.PlaneGeometry(cardW, cardTop - cardBottom)), new THREE.MeshBasicMaterial({ map: card, color: inkColor, transparent: true, depthWrite: false }));
   cardMesh.position.set(left + cardW / 2 - 0.2, INK + 0.01, -(cardTop + cardBottom) / 2); scene.add(cardMesh);
 
-  // paths of light, their heads and lanterns, and sparks where they land
-  const paths = hands.map((c) => {
+  // ---- the balls: glowing spheres with a reflection in the glass, a pool of light beneath, and a thin tail ----
+  const ballGeo = new THREE.SphereGeometry(R, 40, 24);
+  const ribbon = (mat) => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 2 * 3), 3));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 2 * 3), 3));
-    const idx = []; for (let i = 0; i < N - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NT * 2 * 3), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(NT * 2 * 3), 3));
+    const idx = []; for (let i = 0; i < NT - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
     g.setIndex(idx);
-    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false }));
-    mesh.frustumCulled = false; mesh.renderOrder = 6;
-    const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, color: c.clone().lerp(new THREE.Color('#ffffff'), 0.55).multiplyScalar(2), blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, color: c, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
-    head.renderOrder = halo.renderOrder = 7;
-    scene.add(mesh, head, halo);
-    return { mesh, head, halo };
+    const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m);
+    return m;
+  };
+  const balls = hands.map((c) => {
+    const hot = c.clone().lerp(WHITE, 0.3);
+    const ball = new THREE.Mesh(ballGeo, new THREE.MeshPhysicalMaterial({ color: hot, emissive: hot, emissiveIntensity: 1.0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04, toneMapped: false }));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, color: c, opacity: 0.12, ...additive() }));
+    const twin = new THREE.Mesh(ballGeo, new THREE.MeshBasicMaterial({ color: c.clone().multiplyScalar(0.7), transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, fog: false }));
+    const pool = new THREE.Mesh(flat(new THREE.PlaneGeometry(1, 1)), new THREE.MeshBasicMaterial({ map: dot, color: c, ...additive() }));
+    const light = new THREE.PointLight(c, 0, 9, 1.7);
+    const tail = ribbon(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, ...additive() }));
+    const tailTwin = ribbon(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, ...additive() }));
+    ball.renderOrder = 6; halo.renderOrder = 7; pool.renderOrder = 4; tail.renderOrder = 5; twin.renderOrder = tailTwin.renderOrder = -1;
+    scene.add(ball, halo, twin, pool, light);
+    return { ball, halo, twin, pool, light, tail, tailTwin };
   });
-  const sparks = (() => {
+  const points = (count, size, order) => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(900 * 3), 3));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(900 * 3), 3));
-    const p = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.28, map: dot, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false }));
-    p.frustumCulled = false; scene.add(p); return p;
-  })();
-  // notes played live (no piece): heads that appear where and when they are played
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({ size, map: dot, vertexColors: true, ...additive() }));
+    p.frustumCulled = false; p.renderOrder = order; scene.add(p);
+    return p;
+  };
+  const SPARKS = 1400, sparks = points(SPARKS, 0.13, 8), sparkTwin = points(SPARKS, 0.13, -1);
+  const dust = points(DUST, 0.08, 2);
+  const flashes = Array.from({ length: POOL }, () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, ...additive() })); s.renderOrder = 9; s.visible = false; scene.add(s); return s; });
+  const ringGeo = flat(new THREE.RingGeometry(0.86, 1, 48));
+  const rings = Array.from({ length: POOL }, () => { const r = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, ...additive() })); r.renderOrder = 4; r.visible = false; scene.add(r); return r; });
+
+  // ---- notes played live (no piece): heads that appear where and when they are played ----
   const LIVE = 400, spell0 = speller(0);
   const liveHeads = new THREE.InstancedMesh(solidHead, bead, LIVE), liveGlow = new THREE.InstancedMesh(solidHead, glowMat, LIVE);
   liveGlow.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(LIVE * 3), 3);
@@ -330,37 +355,48 @@ export function buildSheet(T, tools, piece) {
     if (!S) return () => 14;
     const step = 0.05, t0 = -4, t1 = (piece.duration || 0) + 6, n = Math.ceil((t1 - t0) / step) + 1, a = new Float64Array(n), tmp = new Float64Array(n);
     for (let i = 0; i < n; i++) a[i] = S.xOf(t0 + i * step);
-    const R = Math.round(0.6 / step);
-    for (let pass = 0; pass < 3; pass++) { for (let i = 0; i < n; i++) { let s = 0, k = 0; for (let j = Math.max(0, i - R); j <= Math.min(n - 1, i + R); j++) { s += a[j]; k++; } tmp[i] = s / k; } a.set(tmp); }
+    const RW = Math.round(0.9 / step);
+    for (let pass = 0; pass < 3; pass++) { for (let i = 0; i < n; i++) { let s = 0, k = 0; for (let j = Math.max(0, i - RW); j <= Math.min(n - 1, i + RW); j++) { s += a[j]; k++; } tmp[i] = s / k; } a.set(tmp); }
     return (t) => { const u = Math.min(n - 1, Math.max(0, (t - t0) / step)), i = Math.floor(u), f = u - i; return i + 1 < n ? a[i] + (a[i + 1] - a[i]) * f : a[i]; };
   })();
-  // a hand's path at time tau: [x, page y, height above the glass]
+
+  // A ball's flight at time tau, as [x, page y, height of its centre]. Between two notes it follows a gravity arc
+  // (straight across the page, a parabola in height); before the first note it drops in; after the last it settles.
   function fly(list, tau) {
-    if (!list.length) return null;
-    if (tau < list[0].t) { const k = Math.min(1, (list[0].t - tau) / 1.2); return [S.xOf(tau), list[0].y, 0.35 + 2.5 * k * k]; }
+    if (tau < list[0].t) { const a = list[0].t - tau; return [S.xOf(tau), list[0].y, REST + Math.min(HMAX + 2, 0.5 * G * a * a)]; }
     let lo = 0, hi = list.length - 1;
     while (lo < hi) { const m = (lo + hi + 1) >> 1; if (list[m].t <= tau) lo = m; else hi = m - 1; }
     const a = list[lo], b = list[lo + 1];
-    if (!b) { const age = tau - a.t; return [a.x, a.y, 0.35 + 1.6 * Math.exp(-age * 2.5) * Math.abs(Math.sin(age * 6))]; }
-    const gap = b.t - a.t, u = (tau - a.t) / gap, hop = Math.min(2.0, 0.3 + 1.5 * Math.sqrt(gap));
-    return [S.xOf(tau), a.y + (b.y - a.y) * smooth(u), 0.35 + hop * 4 * u * (1 - u)];
+    if (!b) { // smaller and smaller bounces, each lasting 0.6 as long as the one before
+      let tt = tau - a.t, span = 0.5;
+      while (tt > span && span > 0.03) { tt -= span; span *= 0.6; }
+      return [a.x, a.y, span > 0.03 ? REST + 0.5 * G * tt * (span - tt) * 0.35 : REST];
+    }
+    const u = (tau - a.t) / (b.t - a.t);
+    return [a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, REST + hopHeight(b.t - a.t) * 4 * u * (1 - u)];
   }
+  const at = (f) => V.set(f[0], f[2], -f[1]); // flight to world
 
-  const WHITE = new THREE.Color('#ffffff'), col = new THREE.Color(), P = new THREE.Vector3(), Pn = new THREE.Vector3(), side = new THREE.Vector3(), view = new THREE.Vector3(), tang = new THREE.Vector3();
+  const col = new THREE.Color(), P = new THREE.Vector3(), Pn = new THREE.Vector3(), side = new THREE.Vector3(), view = new THREE.Vector3(), tang = new THREE.Vector3(), vel = new THREE.Vector3(), q = new THREE.Quaternion();
   const glowLevel = (c, t) => {
     const age = t - c.t;
     if (age < 0) return 0;
     const len = Math.max(0.15, c.end - c.t);
-    let k = age < 0.1 ? 2.8 - 8 * age : age < len ? 1.1 + 0.7 * Math.exp(-(age - 0.1) / 0.5) : 0.3 + 0.8 * Math.exp(-(age - len) / 1.1);
+    const k = age < 0.1 ? 2.8 - 8 * age : age < len ? 1.1 + 0.7 * Math.exp(-(age - 0.1) / 0.5) : 0.3 + 0.8 * Math.exp(-(age - len) / 1.1);
     return k * (0.55 + 0.6 * c.vel);
   };
+  const firstIndex = (list, from) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].t < from) lo = m + 1; else hi = m; } return lo; };
 
-  function render(t, camera, { live, effects, motion, paths: showPaths }) {
+  function render(t, camera, { live, effects, motion, paths: showBalls }) {
     const tall = camera.aspect < 1, sway = motion ? 1 : 0;
-    let xc;
+    let xc, used = 0, nf = 0, nr = 0;
+    const sp = sparks.geometry.attributes, sm = sparkTwin.geometry.attributes;
+    const spark = (x, y, z, c) => { if (used >= SPARKS) return; sp.position.setXYZ(used, x, y, z); sp.color.setXYZ(used, c.r, c.g, c.b); sm.position.setXYZ(used, x, -y, z); sm.color.setXYZ(used, c.r * 0.22, c.g * 0.22, c.b * 0.22); used++; };
+    for (const b of balls) for (const o of [b.ball, b.halo, b.twin, b.pool, b.tail, b.tailTwin]) o.visible = false;
+    for (const b of balls) b.light.intensity = 0;
     if (live) {
-      const xl = (s) => s * 5; // when playing live, the music is spaced by time
-      xc = xl(t) - 6; // the newest notes sit just left of the middle
+      const xl = (s) => s * 5;
+      xc = xl(t) - 6;
       let k = 0;
       for (let i = live.length - 1; i >= 0 && k < LIVE; i--) {
         const n = live[i], x = xl(n.t0);
@@ -376,78 +412,106 @@ export function buildSheet(T, tools, piece) {
       liveHeads.count = liveGlow.count = k;
       liveHeads.instanceMatrix.needsUpdate = liveGlow.instanceMatrix.needsUpdate = liveGlow.instanceColor.needsUpdate = true;
       for (const m of liveLines) { m.visible = true; m.position.x = xc + 20; }
-      for (const p of paths) p.mesh.visible = p.head.visible = p.halo.visible = false;
-      for (const l of lanterns) l.intensity = 0;
-      sparks.visible = false;
-      scene.traverse((o) => { if (o.isInstancedMesh && o !== liveHeads && o !== liveGlow) o.visible = false; });
+      for (const m of printed) m.visible = false;
       cardMesh.visible = false;
     } else {
       xc = camAt(t);
       liveHeads.count = liveGlow.count = 0;
       for (const m of liveLines) m.visible = false;
-      scene.traverse((o) => { if (o.isInstancedMesh) o.visible = true; });
+      for (const m of printed) m.visible = true;
       cardMesh.visible = true;
       if (S) {
         // notes light up as they are played
         const counters = { solid: 0, open: 0, whole: 0 };
-        for (const [kind, , c] of glowHeads) {
-          const i = counters[kind]++, k = glowLevel(c, t);
-          col.copy(hands[c.staff]).multiplyScalar(k);
-          glows[kind].instanceColor.setXYZ(i, col.r, col.g, col.b);
-        }
+        for (const [kind, c] of glowHeads) { const k = glowLevel(c, t); col.copy(hands[c.staff]).multiplyScalar(k); glows[kind].instanceColor.setXYZ(counters[kind]++, col.r, col.g, col.b); }
         for (const kind of ['solid', 'open', 'whole']) glows[kind].instanceColor.needsUpdate = true;
-        // the paths of light
         S.landings.forEach((list, hand) => {
-          const p = paths[hand], on = showPaths && list.length && t > list[0].t - 1.2;
-          p.mesh.visible = p.head.visible = p.halo.visible = !!on;
-          lanterns[hand].intensity = on ? 4 : 0;
-          if (!on) return;
-          const pos = p.mesh.geometry.attributes.position, color = p.mesh.geometry.attributes.color;
-          for (let i = 0; i < N; i++) {
-            const tau = t - (i / (N - 1)) * TRAIL, a = fly(list, tau), b = fly(list, tau + 0.01) || a;
-            P.copy(W(a[0], a[1], a[2])); Pn.copy(W(b[0], b[1], b[2]));
-            tang.subVectors(Pn, P); view.subVectors(camera.position, P);
-            side.crossVectors(tang, view).normalize();
-            const age = i / (N - 1), half = 0.02 + 0.11 * (1 - age) ** 0.7, fade = (1 - age) ** 1.4 * 2.2;
-            pos.setXYZ(i * 2, P.x + side.x * half, P.y + side.y * half, P.z + side.z * half);
-            pos.setXYZ(i * 2 + 1, P.x - side.x * half, P.y - side.y * half, P.z - side.z * half);
-            col.copy(hands[hand]).lerp(WHITE, 0.25 * (1 - age) ** 3).multiplyScalar(fade);
-            color.setXYZ(i * 2, col.r, col.g, col.b); color.setXYZ(i * 2 + 1, col.r, col.g, col.b);
+          if (!showBalls || !list.length || t < list[0].t - 1.4) return;
+          const B = balls[hand], c = hands[hand];
+          // the ball: stretched along its flight when it moves fast, squashed for an instant when it lands
+          const f = fly(list, t), fa = fly(list, t - 0.006), fb = fly(list, t + 0.006);
+          P.copy(at(f)); vel.copy(at(fb)).sub(Pn.copy(at(fa))).divideScalar(0.012);
+          const li = firstIndex(list, t + 1e-6) - 1, since = li >= 0 ? t - list[li].t : 9, squash = Math.max(0, 1 - since / 0.08);
+          const speed = vel.length(), stretch = Math.min(0.3, speed / 70) * (1 - squash);
+          if (squash > 0) { B.ball.quaternion.identity(); B.ball.scale.set(1 + 0.28 * squash, 1 - 0.34 * squash, 1 + 0.28 * squash); B.ball.position.set(P.x, P.y - R * 0.34 * squash, P.z); }
+          else { q.setFromUnitVectors(UP, tang.copy(vel).normalize()); B.ball.quaternion.copy(q); B.ball.scale.set(1 - stretch * 0.4, 1 + stretch, 1 - stretch * 0.4); B.ball.position.copy(P); }
+          B.twin.position.set(B.ball.position.x, -B.ball.position.y, B.ball.position.z); B.twin.scale.copy(B.ball.scale); B.twin.quaternion.copy(B.ball.quaternion); B.twin.quaternion.x *= -1; B.twin.quaternion.z *= -1;
+          B.halo.position.copy(P); B.halo.scale.setScalar(1.5);
+          const lift = Math.max(0, P.y - REST), near = Math.exp(-lift * 0.9);
+          B.pool.position.set(P.x, INK + 0.012, P.z); B.pool.scale.set(1 + lift * 0.9, 1, 1 + lift * 0.9); B.pool.material.opacity = 0.5 * near; B.pool.material.color.copy(c);
+          B.light.position.set(P.x, P.y + 0.4, P.z); B.light.intensity = 2.2 + 5 * squash;
+          for (const o of [B.ball, B.halo, B.twin, B.pool, B.tail, B.tailTwin]) o.visible = true;
+          // the thin tail, brightest just behind the ball, and its reflection
+          const pos = B.tail.geometry.attributes.position, tc = B.tail.geometry.attributes.color, pos2 = B.tailTwin.geometry.attributes.position, tc2 = B.tailTwin.geometry.attributes.color;
+          for (let i = 0; i < NT; i++) {
+            const age = i / (NT - 1), tau = t - age * TAIL;
+            P.copy(at(fly(list, tau))); Pn.copy(at(fly(list, tau + 0.01)));
+            tang.subVectors(Pn, P); view.subVectors(camera.position, P); side.crossVectors(tang, view).normalize();
+            const half = 0.006 + 0.03 * (1 - age) ** 1.6, k = (1 - age) ** 2.2 * 0.7;
+            pos.setXYZ(i * 2, P.x + side.x * half, P.y + side.y * half, P.z + side.z * half); pos.setXYZ(i * 2 + 1, P.x - side.x * half, P.y - side.y * half, P.z - side.z * half);
+            pos2.setXYZ(i * 2, P.x + side.x * half, -P.y - side.y * half, P.z + side.z * half); pos2.setXYZ(i * 2 + 1, P.x - side.x * half, -P.y + side.y * half, P.z - side.z * half);
+            col.copy(c).lerp(WHITE, 0.4 * (1 - age) ** 4).multiplyScalar(k);
+            tc.setXYZ(i * 2, col.r, col.g, col.b); tc.setXYZ(i * 2 + 1, col.r, col.g, col.b);
+            tc2.setXYZ(i * 2, col.r * 0.2, col.g * 0.2, col.b * 0.2); tc2.setXYZ(i * 2 + 1, col.r * 0.2, col.g * 0.2, col.b * 0.2);
           }
-          pos.needsUpdate = color.needsUpdate = true;
-          const h = fly(list, t);
-          P.copy(W(h[0], h[1], h[2]));
-          p.head.position.copy(P); p.head.scale.setScalar(0.7);
-          p.halo.position.copy(P); p.halo.scale.setScalar(2.2);
-          lanterns[hand].position.set(P.x, P.y + 1.6, P.z);
-        });
-        // sparks where a path lands
-        const sp = sparks.geometry.attributes;
-        let used = 0;
-        if (effects) S.landings.forEach((list, hand) => {
-          let lo = 0, hi = list.length - 1;
-          while (lo < hi) { const m = (lo + hi + 1) >> 1; if (list[m].t <= t - 0.8) lo = m; else hi = m - 1; }
-          for (let j = Math.max(0, lo - 2); j < list.length && list[j].t <= t; j++) {
-            const L = list[j], age = t - L.t;
-            if (age < 0 || age > 0.8) continue;
-            const fade = (1 - age / 0.8) ** 1.5;
-            for (let s = 0; s < 9 && used < 900; s++, used++) {
-              const an = rnd(L.t * 10 + hand, s) * Math.PI * 2, v = 1.2 + 2.2 * rnd(s, L.t * 10 + hand);
-              sp.position.setXYZ(used, L.x + Math.cos(an) * v * age, 0.3 + (1.5 + 2.5 * rnd(s + 9, L.t)) * age - 4 * age * age, -(L.y + Math.sin(an) * v * age * 0.7));
-              col.copy(hands[hand]).multiplyScalar(fade * 1.6); sp.color.setXYZ(used, col.r, col.g, col.b);
+          for (const a of [pos, tc, pos2, tc2]) a.needsUpdate = true;
+          if (!effects) return;
+          // comet sparks: shed from the ball as it flies, they drift back, fall, glow white-hot and go out
+          for (let j = Math.floor(t / DT); j * DT > t - LIFE; j--) {
+            const e = j * DT, a = t - e;
+            if (e < list[0].t - 1.4) break;
+            const p0 = at(fly(list, e)), px = p0.x, py = p0.y, pz = p0.z, p1 = at(fly(list, e + 0.004));
+            const vx = (p1.x - px) / 0.004, vy = (p1.y - py) / 0.004, vz = (p1.z - pz) / 0.004;
+            const r1 = rnd(j, hand * 3 + 1), r2 = rnd(j, hand * 3 + 2), r3 = rnd(j, hand * 3 + 3), th = r1 * Math.PI * 2, ph = Math.acos(2 * r2 - 1), sp0 = 0.25 + 0.9 * r3;
+            let x = px + (-vx * 0.05 + Math.sin(ph) * Math.cos(th) * sp0) * a, y = py + (-vy * 0.05 + Math.cos(ph) * sp0 + 0.3) * a - 2.6 * a * a, z = pz + (-vz * 0.05 + Math.sin(ph) * Math.sin(th) * sp0) * a;
+            if (y < 0.03) y = 0.03 + (0.03 - y) * 0.25;
+            const heat = 1 - a / LIFE;
+            col.copy(c).lerp(WHITE, heat ** 3 * 0.85).multiplyScalar(heat ** 1.8 * (0.7 + 0.6 * rnd(j, hand + 9)));
+            spark(x, y, z, col);
+          }
+          // where the ball lands: a flash, a ripple across the glass, and sparks that bounce and skid
+          for (let j = firstIndex(list, t - HIT); j < list.length && list[j].t <= t; j++) {
+            const L = list[j], a = t - L.t, k = a / HIT, seed = L.t * 31 + hand;
+            if (a < 0.16 && nf < POOL) { const s = flashes[nf++], u = a / 0.16; s.visible = true; s.position.set(L.x, REST - R + 0.1, -L.y); s.scale.setScalar(0.6 + 2.0 * Math.sqrt(u)); s.material.color.copy(c).lerp(WHITE, 0.5).multiplyScalar(1.3); s.material.opacity = (1 - u) ** 1.5; }
+            if (a < 0.7 && nr < POOL) { const r = rings[nr++], u = a / 0.7, rad = 0.35 + 1.5 * u ** 0.6; r.visible = true; r.position.set(L.x, INK + 0.015, -L.y); r.scale.set(rad, 1, rad); r.material.color.copy(c).multiplyScalar(0.5 * (1 - u) ** 2); }
+            for (let s = 0; s < HITN; s++) {
+              const an = rnd(seed, s) * Math.PI * 2, v = 1.2 + 3.4 * rnd(s, seed), vy = 1 + 3.2 * rnd(s + 50, seed), d = (v * (1 - Math.exp(-2.4 * a))) / 2.4;
+              let y = 0.2 + vy * a - 4.5 * a * a;
+              if (y < 0.03) y = 0.03 + (0.03 - y) * 0.2;
+              const heat = 1 - k;
+              col.copy(c).lerp(WHITE, heat ** 2 * 0.75).multiplyScalar(heat ** 1.5 * 1.5);
+              spark(L.x + Math.cos(an) * d, y, -(L.y + Math.sin(an) * d * 0.8), col);
             }
           }
         });
-        sparks.geometry.setDrawRange(0, used); sp.position.needsUpdate = sp.color.needsUpdate = true; sparks.visible = used > 0;
       }
     }
-    // the camera glides along beside the music, looking ahead along it
-    const sx = Math.sin(t * 0.17) * sway, sy = Math.sin(t * 0.11 + 1) * sway;
-    if (tall) { camera.position.set(xc - 21 + sx * 0.8, 31 + sy * 0.8, -7.5 + sx * 1.5); camera.lookAt(xc + 6, 0, -7.5); } // tall: from behind, the music runs up the picture into the distance
-    else { camera.position.set(xc - 9 + sx * 1.2, 12 + sy * 0.7, 13 + sx * 0.5); camera.lookAt(xc + 6, 0, -7.5); }
-    lamp.position.set(xc + 2, 6, -5);
+    sparks.geometry.setDrawRange(0, used); sparkTwin.geometry.setDrawRange(0, used);
+    sp.position.needsUpdate = sp.color.needsUpdate = sm.position.needsUpdate = sm.color.needsUpdate = true;
+    for (let i = nf; i < POOL; i++) flashes[i].visible = false;
+    for (let i = nr; i < POOL; i++) rings[i].visible = false;
+    // dust in the air: fixed in space, so it drifts past at its own depth as the camera moves
+    dust.visible = effects;
+    if (effects) {
+      const dp = dust.geometry.attributes;
+      for (let i = 0; i < DUST; i++) {
+        const x = xc - 30 + ((((rnd(i, 1) * 80 - (xc - 30)) % 80) + 80) % 80), k = 0.06 + 0.12 * rnd(i, 4);
+        dp.position.setXYZ(i, x + Math.sin(t * 0.21 + i) * 0.3, 0.6 + rnd(i, 2) * 10 + Math.sin(t * 0.3 + i * 1.7) * 0.25, 7 - rnd(i, 3) * 32);
+        dp.color.setXYZ(i, k * 1.1, k, k * 0.8);
+      }
+      dp.position.needsUpdate = dp.color.needsUpdate = true;
+    }
+    // Cameras. Wide (YouTube): low and to the side, looking along the music, which recedes into the distance.
+    // Tall (Shorts): behind and above, so the music runs up the picture like a road.
+    const sx = Math.sin(t * 0.13) * sway, sy = Math.sin(t * 0.09 + 1) * sway;
+    if (tall) { camera.position.set(xc - 15 + sx, 15 + sy * 0.6, -7.5 + sx * 1.8); camera.lookAt(xc + 5, 0, -7.5); }
+    else { camera.position.set(xc - 11 + sx * 1.5, 6.2 + sy * 0.6, 11.5 - sx * 0.8); camera.lookAt(xc + 5.5, 0.6, -8); }
+    lamp.position.set(xc + 4, 9, -12);
+    backLight.position.set(xc + 40, 16, -9);
     keyLight.position.set(xc - 20, 30, 25); keyLight.target.position.set(xc, 0, -7);
     floor.position.x = xc;
+    const focus = camera.position.distanceTo(V.set(xc + 1, 0, -7.5));
+    return { focus, range: tall ? 11 : 9 };
   }
   return { scene, render };
 }

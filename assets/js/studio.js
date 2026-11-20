@@ -1,7 +1,7 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
 import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=11';
-import { createStage } from './stage.js?v=19';
+import { createStage } from './stage.js?v=21';
 import { createListener, STYLE_NAMES } from './listen.js?v=8';
 import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=12';
 
@@ -483,10 +483,13 @@ async function makeVideo() {
   if (C.view === 'dancer') return say('exp-msg', 'The dancer reacts to sound as it happens, so it cannot be drawn frame by frame. Use "Start filming" below instead.');
   if (!('VideoEncoder' in window)) return say('exp-msg', 'This browser cannot make videos. Use Chrome or Edge on a computer.');
   pause();
-  const short = Number(ui.size.value), long = short === 1080 ? 1920 : 1280, fps = Number(ui.fps.value);
+  const short = Number(ui.size.value), long = Math.round(short * 16 / 9), fps = Number(ui.fps.value);
   const [w, h] = C.shape === 'tall' ? [short, long] : [long, short];
-  const bitrate = short >= 1080 ? 10e6 : 6e6;
-  const vc = await pick([{ mux: 'avc', codec: 'avc1.640028' }, { mux: 'avc', codec: 'avc1.4d0028' }, { mux: 'vp9', codec: 'vp09.00.40.08' }],
+  // generous bitrates: YouTube compresses again, and the cleaner the upload the better its copy looks
+  const bitrate = { 720: 8e6, 1080: 16e6, 1440: 30e6, 2160: 55e6 }[short] * (fps > 30 ? 1.5 : 1);
+  const big = short > 1080; // larger than Full HD needs H.264 level 5.1
+  const vc = await pick(big ? [{ mux: 'avc', codec: 'avc1.640033' }, { mux: 'avc', codec: 'avc1.4d0033' }, { mux: 'vp9', codec: 'vp09.00.51.08' }]
+    : [{ mux: 'avc', codec: 'avc1.64002a' }, { mux: 'avc', codec: 'avc1.640028' }, { mux: 'avc', codec: 'avc1.4d0028' }, { mux: 'vp9', codec: 'vp09.00.40.08' }],
     (c) => VideoEncoder.isConfigSupported({ codec: c.codec, width: w, height: h, bitrate, framerate: fps }));
   if (!vc) return say('exp-msg', 'This browser has no video encoder the studio can use.');
   const ac = 'AudioEncoder' in window ? await pick([{ mux: 'aac', codec: 'mp4a.40.2' }, { mux: 'opus', codec: 'opus' }],
@@ -505,9 +508,12 @@ async function makeVideo() {
     const venc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { failed = e; } });
     venc.configure({ codec: vc.codec, width: w, height: h, bitrate, framerate: fps });
 
-    stage.resize(w, h, 1);
+    // Each frame is drawn larger than the video (twice the size up to Full HD) and scaled down, which smooths every
+    // edge and keeps fine lines steady instead of flickering.
+    stage.resize(w, h, short <= 1080 ? 2 : short <= 1440 ? 1.5 : 1);
     const comp = document.createElement('canvas'); comp.width = w; comp.height = h;
-    const g = comp.getContext('2d'), title = ui.vtitle.value.trim(), total = Math.ceil((LEAD + P.piece.duration + TAIL) * fps);
+    const g = comp.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    const title = ui.vtitle.value.trim(), total = Math.ceil((LEAD + P.piece.duration + TAIL) * fps);
     for (let i = 0; i < total && !failed; i++) {
       stage.render(i / fps - LEAD);
       g.drawImage(canvas, 0, 0, w, h);
