@@ -5,7 +5,7 @@ import { isBlack, noteName } from './midi.js?v=12';
 import { buildFlight, voicesFromPiece } from './flight.js?v=14';
 import { buildDancer } from './dancer.js?v=9';
 import { buildScore } from './score.js?v=19';
-import { buildSheet } from './sheet.js?v=5';
+import { buildSheet } from './sheet.js?v=6';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -75,19 +75,17 @@ const rnd = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 // Depth of field, as a camera lens gives it: sharp where the music is being played, softer nearer and further away.
-// The distance of each pixel is where its line of sight meets the glass the music lies on (good enough for a scene
-// that is nearly all on that plane, and much cheaper than reading the depth buffer). Each pixel gathers its
-// neighbours on a spiral; a neighbour only spreads into it if its own blur is wide enough to reach.
+// Each pixel's distance comes from the depth the graphics card recorded while drawing the scene, so a ball flying
+// above the glass is judged by its own distance, not by the glass behind it. Each pixel gathers its neighbours on a
+// spiral; a neighbour only spreads into it if its own blur is wide enough to reach, so sharp things do not smear.
 const DOF_FRAG = `
-uniform sampler2D tDiffuse; uniform vec2 uRes; uniform mat4 uInvPV; uniform vec3 uCam; uniform float uFocus, uRange, uMax, uSky;
+uniform sampler2D tDiffuse, tDepth; uniform vec2 uRes; uniform float uFocus, uRange, uMax, uSky, uNear, uFar;
 varying vec2 vUv;
 float blurAt(vec2 uv) {
-  vec4 p = uInvPV * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
-  vec3 dir = normalize(p.xyz / p.w - uCam);
-  float d = dir.y < -0.0001 ? -uCam.y / dir.y : 1000.0;
-  vec3 hit = uCam + dir * d;
-  if (d > 900.0 || hit.z > 5.5 || hit.z < -20.5) return uMax * uSky; // beyond the glass: the sky (kept nearly sharp, so stars stay stars)
-  float c = clamp((abs(d - uFocus) - 2.0) / uRange, 0.0, 1.0);
+  float d = texture2D(tDepth, uv).x;
+  if (d >= 0.99999) return uMax * uSky; // nothing drawn there but the sky: kept nearly sharp, so stars stay stars
+  float z = (uNear * uFar) / (uFar - d * (uFar - uNear)); // distance in front of the camera
+  float c = clamp((abs(z - uFocus) - 3.0) / uRange, 0.0, 1.0);
   return c * c * uMax;
 }
 void main() {
@@ -104,13 +102,13 @@ void main() {
   gl_FragColor = sum / w;
 }`;
 function depthOfField() {
-  const material = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uInvPV: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() }, uFocus: { value: 20 }, uRange: { value: 9 }, uMax: { value: 0 }, uSky: { value: 1 } },
+  const material = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uFocus: { value: 20 }, uRange: { value: 9 }, uMax: { value: 0 }, uSky: { value: 1 }, uNear: { value: 0.5 }, uFar: { value: 600 } },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: DOF_FRAG, depthTest: false, depthWrite: false });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   quad.frustumCulled = false;
   return { enabled: false, needsSwap: true, clear: false, renderToScreen: false, material,
     setSize(w, h) { material.uniforms.uRes.value.set(w, h); },
-    render(renderer, writeBuffer, readBuffer) { material.uniforms.tDiffuse.value = readBuffer.texture; renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer); renderer.render(quad, cam); },
+    render(renderer, writeBuffer, readBuffer) { material.uniforms.tDiffuse.value = readBuffer.texture; material.uniforms.tDepth.value = readBuffer.depthTexture; renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer); renderer.render(quad, cam); },
     dispose() { material.dispose(); quad.geometry.dispose(); } };
 }
 
@@ -129,7 +127,9 @@ export function createStage(canvas) {
   const camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.5, 600);
   const env = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture;
   // Drawn first into a multisampled picture, so thin lines (staff lines, stems) are smooth instead of jagged.
-  const composer = new THREE.EffectComposer(renderer, new THREE.WebGLRenderTarget(960, 540, { type: THREE.HalfFloatType, samples: 4 }));
+  const target = new THREE.WebGLRenderTarget(960, 540, { type: THREE.HalfFloatType, samples: 4 });
+  target.depthTexture = new THREE.DepthTexture(960, 540); // the depth of every pixel, for the depth of field
+  const composer = new THREE.EffectComposer(renderer, target);
   const renderPass = new THREE.RenderPass(new THREE.Scene(), camera);
   const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(960, 540), 0.6, 0.5, 0.8);
   const dof = depthOfField();
@@ -344,8 +344,8 @@ export function createStage(canvas) {
       bloom.strength = 0.85 * (0.3 + S.glow);
       camera.updateMatrixWorld();
       const u = dof.material.uniforms, size = renderer.getDrawingBufferSize(new THREE.Vector2());
-      u.uInvPV.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse); u.uCam.value.copy(camera.position);
-      u.uFocus.value = view.focus; u.uRange.value = view.range; u.uMax.value = S.effects ? 0.0075 * Math.min(size.x, size.y) : 0; u.uSky.value = view.sky ? 0.1 : 1;
+      u.uNear.value = camera.near; u.uFar.value = camera.far;
+      u.uFocus.value = -view.point.applyMatrix4(camera.matrixWorldInverse).z; u.uRange.value = view.range; u.uMax.value = S.effects ? 0.0075 * Math.min(size.x, size.y) : 0; u.uSky.value = view.sky ? 0.1 : 1;
       composer.render();
       return;
     }

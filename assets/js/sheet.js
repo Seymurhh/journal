@@ -632,7 +632,7 @@ export function buildSheet(T, tools, piece) {
     keyLight.position.set(xc - 20, 30, 25); keyLight.target.position.set(xc, 0, -7);
     floor.position.x = xc;
     const focus = camera.position.distanceTo(V.set(xc + 1, 0, -7.5));
-    return { focus, range: pose[2], sky: mode > 0 };
+    return { focus, range: pose[2], sky: mode > 0, point: new THREE.Vector3(xc + 1, 0, -7.5) };
   }
   return { scene, render };
 }
