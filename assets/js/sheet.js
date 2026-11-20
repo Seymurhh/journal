@@ -155,6 +155,51 @@ const HIT = 0.75, HITN = 22;           // sparks thrown up where a ball lands
 const DUST = 260, POOL = 12;
 const hopHeight = (gap) => { const h = (G * gap * gap) / 8; return HMAX * (1 - Math.exp(-h / HMAX)); }; // a true gravity arc, capped softly for long notes
 
+// The sky around the music: an aurora of slow curtains over the far horizon, or a band of the Milky Way with clouds
+// of colour and dark lanes of dust. (Stars are separate points, so they stay sharp.) Colours come from the theme.
+const SKY_FRAG = `
+uniform float uTime, uMode; uniform vec3 uA, uB, uC;
+varying vec3 vDir;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; } return s; }
+void main() {
+  vec3 d = normalize(vDir);
+  float az = atan(d.z, d.x), el = asin(clamp(d.y, -1.0, 1.0));
+  vec3 col = vec3(0.0);
+  if (uMode > 1.5 && uMode < 2.5) {
+    for (int k = 0; k < 3; k++) {
+      float fk = float(k), x = az * (2.2 + fk * 0.6) + fk * 2.1;
+      float wave = fbm(vec2(x * 1.6 + uTime * (0.03 + 0.01 * fk), fk * 4.0 + uTime * 0.02));
+      float h = el - (0.04 + 0.16 * fbm(vec2(x * 0.7, 9.0 + fk)));
+      float curtain = smoothstep(0.42, 0.75, wave);
+      float body = smoothstep(-0.015, 0.02, h) * exp(-max(h, 0.0) * (5.0 + fk * 2.0));
+      float rays = 0.55 + 0.45 * noise(vec2(az * 140.0 + fk * 7.0, uTime * 0.25));
+      vec3 c = mix(k == 0 ? uA : (k == 1 ? uC : uB), uB, clamp(h * 3.0, 0.0, 1.0));
+      col += c * curtain * body * rays * 0.8;
+    }
+  }
+  if (uMode > 2.5) {
+    vec3 n = normalize(vec3(-0.25, 0.75, 0.6));
+    float b = dot(d, n), band = exp(-b * b * 14.0);
+    vec2 q = vec2(az * 3.0 + uTime * 0.004, b * 8.0);
+    float neb = fbm(q * 1.5), lane = smoothstep(0.5, 0.72, fbm(q * 3.0 + 5.0));
+    col += mix(uB, uC, neb) * band * (0.1 + 0.45 * neb * neb) * (1.0 - 0.7 * lane * band);
+    col += vec3(1.0, 0.92, 0.8) * exp(-b * b * 60.0) * 0.05 * (1.0 - lane);
+    col += uA * exp(-pow(length(d - normalize(vec3(0.6, 0.35, -0.7))) * 2.2, 2.0)) * 0.1 * fbm(vec2(az * 6.0, el * 6.0));
+  }
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const SKIES = { plain: 0, stars: 1, aurora: 2, galaxy: 3 };
+// Camera places, as [offset of the camera, offset of the point it looks at, depth of field range], relative to the
+// music being played. Travelling glides between them: higher, low, higher, from above, and round again.
+const CAMS = {
+  wide: { low: [[-11, 6.2, 11.5], [5.5, 0.6, -8], 9], side: [[-7, 13, 15], [5, 0, -8], 12], top: [[-1, 27, 9], [3.5, 0, -7.5], 16] },
+  tall: { low: [[-15, 12, -7.5], [6, 0, -7.5], 11], side: [[-21, 22, -7.5], [6, 0, -7.5], 14], top: [[-5, 36, -7.5], [4, 0, -7.5], 18] },
+};
+const TOUR = ['side', 'low', 'side', 'top'];
+
 export function buildSheet(T, tools, piece) {
   const { canvasTex, dot, env } = tools, scene = new THREE.Scene();
   scene.background = canvasTex(4, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, T.bg[0]); r.addColorStop(1, T.bg[1]); g.fillStyle = r; g.fillRect(0, 0, w, h); });
@@ -272,9 +317,10 @@ export function buildSheet(T, tools, piece) {
   };
   inst(bar, ink, lists.line, ([x, y, w, h, a]) => M.compose(V.set(x, INK, -y), Q.setFromAxisAngle(UP, a), SC.set(w, 1, h)));
   const headPlace = ([x, y]) => M.compose(V.set(x, INK, -y), Q.identity(), SC.set(1, 1, 1));
-  const glows = {};
+  const glows = {}, heads = {};
   for (const [kind, geo] of [['solid', solidHead], ['open', openHead], ['whole', wholeHead]]) {
-    inst(geo, bead, lists[kind], headPlace);
+    heads[kind] = inst(geo, bead, lists[kind], headPlace); // tinted with the hand's colour once played (the matte look)
+    heads[kind].instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, lists[kind].length) * 3).fill(1), 3);
     glows[kind] = inst(geo, glowMat, lists[kind], ([x, y]) => M.compose(V.set(x, INK + 0.02, -y), Q.identity(), SC.set(1.14, 1.3, 1.14)));
     glows[kind].instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, lists[kind].length) * 3), 3);
     glows[kind].renderOrder = 3;
@@ -343,6 +389,30 @@ export function buildSheet(T, tools, piece) {
   const ringGeo = flat(new THREE.RingGeometry(0.86, 1, 48));
   const rings = Array.from({ length: POOL }, () => { const r = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, ...additive() })); r.renderOrder = 4; r.visible = false; scene.add(r); return r; });
 
+  // ---- the sky ----
+  const sky = new THREE.Group(); scene.add(sky);
+  const nc = T.notes.length;
+  const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: { uTime: { value: 0 }, uMode: { value: 0 }, uA: { value: new THREE.Color(T.notes[1 % nc]) }, uB: { value: new THREE.Color(T.notes[2 % nc]) }, uC: { value: new THREE.Color(T.notes[0]) } },
+    vertexShader: 'varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: SKY_FRAG });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(500, 48, 24), skyMat); dome.renderOrder = -10; dome.frustumCulled = false; sky.add(dome);
+  const starLayers = [[900, 2.2, 0], [420, 3.2, 0], [160, 4.6, 0], [1100, 1.9, 1]].map(([count, size, inBand], layer) => { // the last layer crowds along the galaxy's band
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(count * 3), base = [];
+    const n = new THREE.Vector3(-0.25, 0.75, 0.6).normalize(), d = new THREE.Vector3();
+    for (let i = 0; i < count; i++) {
+      const zz = rnd(i, layer * 7 + 1) * 2 - 1, ang = rnd(i, layer * 7 + 2) * Math.PI * 2, rr = Math.sqrt(1 - zz * zz); // an even spread over the sphere
+      d.set(rr * Math.cos(ang), zz, rr * Math.sin(ang));
+      if (inBand) { d.addScaledVector(n, -d.dot(n) * (0.75 + 0.25 * rnd(i, 40))).normalize(); }
+      pos.set([d.x * 420, d.y * 420, d.z * 420], i * 3);
+      const warm = rnd(i, layer * 7 + 4), k = 0.6 + 1.1 * rnd(i, layer * 7 + 5) ** 2;
+      base.push([k * (0.85 + 0.15 * warm), k * 0.92, k * (1.05 - 0.2 * warm), rnd(i, layer * 7 + 6) * 6.28, 0.6 + 2.2 * rnd(i, layer * 7 + 8)]);
+    }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({ size, sizeAttenuation: false, map: dot, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false }));
+    p.frustumCulled = false; p.renderOrder = -9; sky.add(p);
+    return { p, base, size, inBand };
+  });
+
   // ---- notes played live (no piece): heads that appear where and when they are played ----
   const LIVE = 400, spell0 = speller(0);
   const liveHeads = new THREE.InstancedMesh(solidHead, bead, LIVE), liveGlow = new THREE.InstancedMesh(solidHead, glowMat, LIVE);
@@ -387,7 +457,8 @@ export function buildSheet(T, tools, piece) {
   };
   const firstIndex = (list, from) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].t < from) lo = m + 1; else hi = m; } return lo; };
 
-  function render(t, camera, { live, effects, motion, paths: showBalls }) {
+  function render(t, camera, { live, effects, motion, paths: showBalls, cam = 'side', glow = 0.45, sky: skyName = 'stars', px = 1 }) {
+    const GL = Math.max(0, Math.min(1, glow)), lift2 = 0.35 + GL; // GL: how much the notes, balls and sparks glow (0 = matte)
     const tall = camera.aspect < 1, sway = motion ? 1 : 0;
     let xc, used = 0, nf = 0, nr = 0;
     const sp = sparks.geometry.attributes, sm = sparkTwin.geometry.attributes;
@@ -423,8 +494,12 @@ export function buildSheet(T, tools, piece) {
       if (S) {
         // notes light up as they are played
         const counters = { solid: 0, open: 0, whole: 0 };
-        for (const [kind, c] of glowHeads) { const k = glowLevel(c, t); col.copy(hands[c.staff]).multiplyScalar(k); glows[kind].instanceColor.setXYZ(counters[kind]++, col.r, col.g, col.b); }
-        for (const kind of ['solid', 'open', 'whole']) glows[kind].instanceColor.needsUpdate = true;
+        for (const [kind, c] of glowHeads) {
+          const k = glowLevel(c, t), i = counters[kind]++, tint = Math.min(1, k / 1.1) * 0.9;
+          col.copy(hands[c.staff]).multiplyScalar(k * GL * 1.5); glows[kind].instanceColor.setXYZ(i, col.r, col.g, col.b);
+          col.setRGB(1, 1, 1).lerp(hands[c.staff], tint); heads[kind].instanceColor.setXYZ(i, col.r, col.g, col.b);
+        }
+        for (const kind of ['solid', 'open', 'whole']) glows[kind].instanceColor.needsUpdate = heads[kind].instanceColor.needsUpdate = true;
         S.landings.forEach((list, hand) => {
           if (!showBalls || !list.length || t < list[0].t - 1.4) return;
           const B = balls[hand], c = hands[hand];
@@ -438,8 +513,8 @@ export function buildSheet(T, tools, piece) {
           B.twin.position.set(B.ball.position.x, -B.ball.position.y, B.ball.position.z); B.twin.scale.copy(B.ball.scale); B.twin.quaternion.copy(B.ball.quaternion); B.twin.quaternion.x *= -1; B.twin.quaternion.z *= -1;
           B.halo.position.copy(P); B.halo.scale.setScalar(1.5);
           const lift = Math.max(0, P.y - REST), near = Math.exp(-lift * 0.9);
-          B.pool.position.set(P.x, INK + 0.012, P.z); B.pool.scale.set(1 + lift * 0.9, 1, 1 + lift * 0.9); B.pool.material.opacity = 0.5 * near; B.pool.material.color.copy(c);
-          B.light.position.set(P.x, P.y + 0.4, P.z); B.light.intensity = 2.2 + 5 * squash;
+          B.pool.position.set(P.x, INK + 0.012, P.z); B.pool.scale.set(1 + lift * 0.9, 1, 1 + lift * 0.9); B.pool.material.opacity = 0.8 * near * GL; B.ball.material.emissiveIntensity = 0.25 + GL; B.halo.material.opacity = 0.26 * GL; B.pool.material.color.copy(c);
+          B.light.position.set(P.x, P.y + 0.4, P.z); B.light.intensity = (2.2 + 5 * squash) * lift2;
           for (const o of [B.ball, B.halo, B.twin, B.pool, B.tail, B.tailTwin]) o.visible = true;
           // the thin tail, brightest just behind the ball, and its reflection
           const pos = B.tail.geometry.attributes.position, tc = B.tail.geometry.attributes.color, pos2 = B.tailTwin.geometry.attributes.position, tc2 = B.tailTwin.geometry.attributes.color;
@@ -450,7 +525,7 @@ export function buildSheet(T, tools, piece) {
             const half = 0.006 + 0.03 * (1 - age) ** 1.6, k = (1 - age) ** 2.2 * 0.7;
             pos.setXYZ(i * 2, P.x + side.x * half, P.y + side.y * half, P.z + side.z * half); pos.setXYZ(i * 2 + 1, P.x - side.x * half, P.y - side.y * half, P.z - side.z * half);
             pos2.setXYZ(i * 2, P.x + side.x * half, -P.y - side.y * half, P.z + side.z * half); pos2.setXYZ(i * 2 + 1, P.x - side.x * half, -P.y + side.y * half, P.z - side.z * half);
-            col.copy(c).lerp(WHITE, 0.4 * (1 - age) ** 4).multiplyScalar(k);
+            col.copy(c).lerp(WHITE, 0.4 * (1 - age) ** 4).multiplyScalar(k * lift2);
             tc.setXYZ(i * 2, col.r, col.g, col.b); tc.setXYZ(i * 2 + 1, col.r, col.g, col.b);
             tc2.setXYZ(i * 2, col.r * 0.2, col.g * 0.2, col.b * 0.2); tc2.setXYZ(i * 2 + 1, col.r * 0.2, col.g * 0.2, col.b * 0.2);
           }
@@ -466,20 +541,20 @@ export function buildSheet(T, tools, piece) {
             let x = px + (-vx * 0.05 + Math.sin(ph) * Math.cos(th) * sp0) * a, y = py + (-vy * 0.05 + Math.cos(ph) * sp0 + 0.3) * a - 2.6 * a * a, z = pz + (-vz * 0.05 + Math.sin(ph) * Math.sin(th) * sp0) * a;
             if (y < 0.03) y = 0.03 + (0.03 - y) * 0.25;
             const heat = 1 - a / LIFE;
-            col.copy(c).lerp(WHITE, heat ** 3 * 0.85).multiplyScalar(heat ** 1.8 * (0.7 + 0.6 * rnd(j, hand + 9)));
+            col.copy(c).lerp(WHITE, heat ** 3 * 0.85).multiplyScalar(heat ** 1.8 * (0.7 + 0.6 * rnd(j, hand + 9)) * lift2);
             spark(x, y, z, col);
           }
           // where the ball lands: a flash, a ripple across the glass, and sparks that bounce and skid
           for (let j = firstIndex(list, t - HIT); j < list.length && list[j].t <= t; j++) {
             const L = list[j], a = t - L.t, k = a / HIT, seed = L.t * 31 + hand;
-            if (a < 0.16 && nf < POOL) { const s = flashes[nf++], u = a / 0.16; s.visible = true; s.position.set(L.x, REST - R + 0.1, -L.y); s.scale.setScalar(0.6 + 2.0 * Math.sqrt(u)); s.material.color.copy(c).lerp(WHITE, 0.5).multiplyScalar(1.3); s.material.opacity = (1 - u) ** 1.5; }
-            if (a < 0.7 && nr < POOL) { const r = rings[nr++], u = a / 0.7, rad = 0.35 + 1.5 * u ** 0.6; r.visible = true; r.position.set(L.x, INK + 0.015, -L.y); r.scale.set(rad, 1, rad); r.material.color.copy(c).multiplyScalar(0.5 * (1 - u) ** 2); }
+            if (a < 0.16 && nf < POOL) { const s = flashes[nf++], u = a / 0.16; s.visible = true; s.position.set(L.x, REST - R + 0.1, -L.y); s.scale.setScalar(0.6 + 2.0 * Math.sqrt(u)); s.material.color.copy(c).lerp(WHITE, 0.5).multiplyScalar(1.6 * lift2 - 0.4); s.material.opacity = (1 - u) ** 1.5; }
+            if (a < 0.7 && nr < POOL) { const r = rings[nr++], u = a / 0.7, rad = 0.35 + 1.5 * u ** 0.6; r.visible = true; r.position.set(L.x, INK + 0.015, -L.y); r.scale.set(rad, 1, rad); r.material.color.copy(c).multiplyScalar(0.6 * lift2 * (1 - u) ** 2); }
             for (let s = 0; s < HITN; s++) {
               const an = rnd(seed, s) * Math.PI * 2, v = 1.2 + 3.4 * rnd(s, seed), vy = 1 + 3.2 * rnd(s + 50, seed), d = (v * (1 - Math.exp(-2.4 * a))) / 2.4;
               let y = 0.2 + vy * a - 4.5 * a * a;
               if (y < 0.03) y = 0.03 + (0.03 - y) * 0.2;
               const heat = 1 - k;
-              col.copy(c).lerp(WHITE, heat ** 2 * 0.75).multiplyScalar(heat ** 1.5 * 1.5);
+              col.copy(c).lerp(WHITE, heat ** 2 * 0.75).multiplyScalar(heat ** 1.5 * 1.5 * lift2);
               spark(L.x + Math.cos(an) * d, y, -(L.y + Math.sin(an) * d * 0.8), col);
             }
           }
@@ -503,15 +578,34 @@ export function buildSheet(T, tools, piece) {
     }
     // Cameras. Wide (YouTube): low and to the side, looking along the music, which recedes into the distance.
     // Tall (Shorts): behind and above, so the music runs up the picture like a road.
-    const sx = Math.sin(t * 0.13) * sway, sy = Math.sin(t * 0.09 + 1) * sway;
-    if (tall) { camera.position.set(xc - 15 + sx, 15 + sy * 0.6, -7.5 + sx * 1.8); camera.lookAt(xc + 5, 0, -7.5); }
-    else { camera.position.set(xc - 11 + sx * 1.5, 6.2 + sy * 0.6, 11.5 - sx * 0.8); camera.lookAt(xc + 5.5, 0.6, -8); }
+    const sx = Math.sin(t * 0.13) * sway, sy = Math.sin(t * 0.09 + 1) * sway, set = CAMS[tall ? 'tall' : 'wide'];
+    let pose = set[cam] || set.side;
+    if (cam === 'move') { // hold each place for a while, then glide to the next
+      const ph = (((t + 8) / 14) % TOUR.length + TOUR.length) % TOUR.length, i = Math.floor(ph), f = smooth((ph - i - 0.55) / 0.45);
+      const A = set[TOUR[i]], B = set[TOUR[(i + 1) % TOUR.length]], mix = (a, b) => a.map((v, k) => v + (b[k] - v) * f);
+      pose = [mix(A[0], B[0]), mix(A[1], B[1]), A[2] + (B[2] - A[2]) * f];
+    }
+    const [po, lo] = pose;
+    camera.position.set(xc + po[0] + sx * (tall ? 1 : 1.5), po[1] + sy * 0.6, po[2] + (tall ? sx * 1.8 : -sx * 0.8));
+    camera.lookAt(xc + lo[0], lo[1], lo[2]);
+    // the sky travels with the camera, so it is infinitely far away
+    const mode = SKIES[skyName] ?? 1;
+    sky.position.copy(camera.position); sky.visible = mode > 0; dome.visible = mode > 1; floor.visible = mode === 0; // with a sky, the glass floats in space
+    skyMat.uniforms.uTime.value = t; skyMat.uniforms.uMode.value = mode;
+    if (mode > 0) for (const L of starLayers) {
+      L.p.visible = !L.inBand || mode === 3;
+      if (!L.p.visible) continue;
+      L.p.material.size = L.size * Math.max(0.8, px);
+      const cc = L.p.geometry.attributes.color;
+      L.base.forEach(([r, g, b, phase, rate], i) => { const tw = 0.72 + 0.28 * Math.sin(t * rate + phase); cc.setXYZ(i, r * tw, g * tw, b * tw); });
+      cc.needsUpdate = true;
+    }
     lamp.position.set(xc + 4, 9, -12);
     backLight.position.set(xc + 40, 16, -9);
     keyLight.position.set(xc - 20, 30, 25); keyLight.target.position.set(xc, 0, -7);
     floor.position.x = xc;
     const focus = camera.position.distanceTo(V.set(xc + 1, 0, -7.5));
-    return { focus, range: tall ? 11 : 9 };
+    return { focus, range: pose[2], sky: mode > 0 };
   }
   return { scene, render };
 }

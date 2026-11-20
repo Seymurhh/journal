@@ -1,7 +1,7 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
 import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=11';
-import { createStage } from './stage.js?v=21';
+import { createStage } from './stage.js?v=22';
 import { createListener, STYLE_NAMES } from './listen.js?v=8';
 import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=12';
 
@@ -13,7 +13,7 @@ const V = { rec: null, chunks: [], dest: null }; // live screen recording
 const R = { on: false, events: [], start: 0 }; // recording of what is played
 const L = { access: null, inputs: [], held: new Map(), trail: [], voices: new Map(), sustained: [], pedal: false, last: -99 }; // live playing
 const ui = Object.fromEntries(['play', 'seek', 'clock', 'speed', 'midifile', 'demo', 'record', 'savemidi', 'labels', 'effects', 'motion', 'mic', 'capture', 'vtitle', 'size', 'fps',
-  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon', 'library', 'dots', 'paths'].map((id) => [id, $('#' + id)]));
+  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon', 'library', 'dots', 'paths', 'glow'].map((id) => [id, $('#' + id)]));
 const say = (id, text) => { $('#' + id).textContent = text; };
 const mmss = (s) => { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 const safeName = () => (P.name || 'piano').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'piano';
@@ -22,7 +22,7 @@ const fill = (el) => el.style.setProperty('--fill', `${((el.value - el.min) / (e
 
 // ---------- choices are remembered on this computer ----------
 const PHONE = matchMedia('(max-width: 640px)').matches; // a phone held upright: start with the tall picture looking along the keys, which fills the screen
-const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, sheetCam: 'side', glow: 0.45, sky: 'stars', labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
 const C = { ...DEFAULTS };
 try { const saved = JSON.parse(localStorage.getItem('studio') || '{}'); if (!(saved.v >= 2)) delete saved.labels; if (saved.v !== 3) delete saved.notes; Object.assign(C, saved, { v: 3 }); } catch {} // v 2: note names off unless switched on again; v 3: notes are trails of light unless changed again
 const remember = () => { try { localStorage.setItem('studio', JSON.stringify(C)); } catch {} };
@@ -205,6 +205,11 @@ radios($('#cameras'), [], C.camera, (v) => { C.camera = v; remember(); stage.set
 radios($('#shapes'), [], C.shape, (v) => { C.shape = v; remember(); box.classList.toggle('tall', v === 'tall'); fit(); });
 radios($('#notes'), [], C.notes, (v) => { C.notes = v; remember(); stage.setNotes(v); });
 radios($('#strip'), [], C.strip, (v) => { C.strip = v; remember(); stage.setStrip(v); });
+radios($('#sheetcam'), [], C.sheetCam, (v) => { C.sheetCam = v; remember(); stage.setSheetCam(v); });
+radios($('#sky'), [], C.sky, (v) => { C.sky = v; remember(); stage.setSky(v); });
+stage.setSheetCam(C.sheetCam); stage.setSky(C.sky); stage.setGlow(C.glow);
+ui.glow.value = C.glow; fill(ui.glow);
+ui.glow.addEventListener('input', () => { C.glow = Number(ui.glow.value); remember(); stage.setGlow(C.glow); fill(ui.glow); });
 stage.setStrip(C.strip);
 stage.setNotes(C.notes);
 for (const [k, fn] of [['labels', 'setLabels'], ['effects', 'setEffects'], ['motion', 'setMotion'], ['ribbon', 'setRibbon'], ['dots', 'setDots'], ['paths', 'setPaths']]) {

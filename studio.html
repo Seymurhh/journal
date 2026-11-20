@@ -113,6 +113,21 @@
         <button type="button" role="radio" data-v="notes" aria-checked="true">Written notes</button>
         <button type="button" role="radio" data-v="lines" aria-checked="false">Flight lines</button>
       </div>
+      <h2 class="sheet-only">Camera</h2>
+      <div class="seg wrap sheet-only" id="sheetcam" role="radiogroup" aria-label="Camera">
+        <button type="button" role="radio" data-v="low" aria-checked="false">Close and low</button>
+        <button type="button" role="radio" data-v="side" aria-checked="true">Higher</button>
+        <button type="button" role="radio" data-v="top" aria-checked="false">From above</button>
+        <button type="button" role="radio" data-v="move" aria-checked="false">Travelling</button>
+      </div>
+      <h2 class="sheet-only">Sky</h2>
+      <div class="seg wrap sheet-only" id="sky" role="radiogroup" aria-label="Sky">
+        <button type="button" role="radio" data-v="plain" aria-checked="false">Plain</button>
+        <button type="button" role="radio" data-v="stars" aria-checked="true">Stars</button>
+        <button type="button" role="radio" data-v="aurora" aria-checked="false">Aurora</button>
+        <button type="button" role="radio" data-v="galaxy" aria-checked="false">Galaxy</button>
+      </div>
+      <label class="slider sheet-only"><span>Glow of the notes <small>(left: matte)</small></span><input type="range" id="glow" min="0" max="1" step="0.05" value="0.45"></label>
       <label class="check sheet-only"><input type="checkbox" id="paths" checked><span>Paths of light from note to note<small>A light for each hand hops along the music and lands on every note as it is played.</small></span></label>
       <label class="check keys-only"><input type="checkbox" id="dots" checked><span>Bouncing balls on the film strip<small>A ball for each hand jumps from note to note and moves from left to right as the piece goes on, reaching the right end as it finishes.</small></span></label>
       <label class="check"><input type="checkbox" id="labels"><span>Show note names</span></label>
@@ -140,6 +155,6 @@
   </aside>
 </main>
 <footer class="credits">Grand piano recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Electric pianos and harpsichord: FluidR3 GM by Frank Wen.</footer>
-<script type="module" src="assets/js/studio.js?v=21"></script>
+<script type="module" src="assets/js/studio.js?v=22"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ import { isBlack, noteName } from './midi.js?v=11';
 import { buildFlight, voicesFromPiece } from './flight.js?v=13';
 import { buildDancer } from './dancer.js?v=9';
 import { buildScore } from './score.js?v=19';
-import { buildSheet } from './sheet.js?v=3';
+import { buildSheet } from './sheet.js?v=4';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -79,12 +79,14 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 // that is nearly all on that plane, and much cheaper than reading the depth buffer). Each pixel gathers its
 // neighbours on a spiral; a neighbour only spreads into it if its own blur is wide enough to reach.
 const DOF_FRAG = `
-uniform sampler2D tDiffuse; uniform vec2 uRes; uniform mat4 uInvPV; uniform vec3 uCam; uniform float uFocus, uRange, uMax;
+uniform sampler2D tDiffuse; uniform vec2 uRes; uniform mat4 uInvPV; uniform vec3 uCam; uniform float uFocus, uRange, uMax, uSky;
 varying vec2 vUv;
 float blurAt(vec2 uv) {
   vec4 p = uInvPV * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
   vec3 dir = normalize(p.xyz / p.w - uCam);
   float d = dir.y < -0.0001 ? -uCam.y / dir.y : 1000.0;
+  vec3 hit = uCam + dir * d;
+  if (d > 900.0 || hit.z > 5.5 || hit.z < -20.5) return uMax * uSky; // beyond the glass: the sky (kept nearly sharp, so stars stay stars)
   float c = clamp((abs(d - uFocus) - 2.0) / uRange, 0.0, 1.0);
   return c * c * uMax;
 }
@@ -102,7 +104,7 @@ void main() {
   gl_FragColor = sum / w;
 }`;
 function depthOfField() {
-  const material = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uInvPV: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() }, uFocus: { value: 20 }, uRange: { value: 9 }, uMax: { value: 0 } },
+  const material = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uInvPV: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() }, uFocus: { value: 20 }, uRange: { value: 9 }, uMax: { value: 0 }, uSky: { value: 1 } },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: DOF_FRAG, depthTest: false, depthWrite: false });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   quad.frustumCulled = false;
@@ -136,7 +138,7 @@ export function createStage(canvas) {
   const clip = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]; // hide the part of a note that has passed the keys
   const dot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const beamTex = canvasTex(32, 128, (g, w, h) => { const r = g.createLinearGradient(0, h, 0, 0); r.addColorStop(0, 'rgba(255,255,255,.95)'); r.addColorStop(0.25, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  const S = { notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, sheet: null, score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
+  const S = { notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, sheet: null, sheetCam: 'side', glow: 0.45, sky: 'stars', score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
   const labelMats = new Map(), ray = new THREE.Raycaster(), point = new THREE.Vector2();
 
   function labelMaterial(pitch, T) {
@@ -337,11 +339,13 @@ export function createStage(canvas) {
     if (!S.scene) build();
     if (S.view === 'dancer') { S.dancer.render(camera, S.music, { effects: S.effects, motion: S.motion, style: S.dance }); composer.render(); return; }
     if (S.view === 'sheet') {
-      const view = S.sheet.render(t, camera, { live: live ? S.trail || [] : null, effects: S.effects, motion: S.motion, paths: S.paths });
+      const px = renderer.getDrawingBufferSize(new THREE.Vector2()).y / 1080;
+      const view = S.sheet.render(t, camera, { live: live ? S.trail || [] : null, effects: S.effects, motion: S.motion, paths: S.paths, cam: S.sheetCam, glow: S.glow, sky: S.sky, px });
+      bloom.strength = 0.85 * (0.3 + S.glow);
       camera.updateMatrixWorld();
       const u = dof.material.uniforms, size = renderer.getDrawingBufferSize(new THREE.Vector2());
       u.uInvPV.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse); u.uCam.value.copy(camera.position);
-      u.uFocus.value = view.focus; u.uRange.value = view.range; u.uMax.value = S.effects ? 0.0075 * Math.min(size.x, size.y) : 0;
+      u.uFocus.value = view.focus; u.uRange.value = view.range; u.uMax.value = S.effects ? 0.0075 * Math.min(size.x, size.y) : 0; u.uSky.value = view.sky ? 0.1 : 1;
       composer.render();
       return;
     }
@@ -524,6 +528,9 @@ export function createStage(canvas) {
     setDots(on) { S.dots = on; },
     setStrip(kind) { S.strip = kind === 'lines' ? 'lines' : 'notes'; },
     setPaths(on) { S.paths = on; },
+    setSheetCam(c) { S.sheetCam = ['low', 'side', 'top', 'move'].includes(c) ? c : 'side'; },
+    setGlow(v) { S.glow = Math.max(0, Math.min(1, Number(v) || 0)); },
+    setSky(v) { S.sky = ['plain', 'stars', 'aurora', 'galaxy'].includes(v) ? v : 'stars'; },
     setNotes(kind) { S.notes = ['bars', 'water'].includes(kind) ? kind : 'trails'; S.scene = null; },
     setEffects(on) { S.effects = on; },
     setMotion(on) { S.motion = on; },
