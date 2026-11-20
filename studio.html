@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Piano studio</title>
-<link rel="stylesheet" href="assets/css/studio.css?v=14">
+<link rel="stylesheet" href="assets/css/studio.css?v=15">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -76,6 +76,7 @@
       <div class="seg" id="views" role="radiogroup" aria-label="Picture">
         <button type="button" role="radio" data-v="piano" aria-checked="true">Piano keys</button>
         <button type="button" role="radio" data-v="flight" aria-checked="false">Flight lines</button>
+        <button type="button" role="radio" data-v="sheet" aria-checked="false">Sheet music in light</button>
         <button type="button" role="radio" data-v="dancer" aria-checked="false">Dancer</button>
       </div>
       <div id="dance-box" class="sub" hidden>
@@ -107,6 +108,12 @@
         <button type="button" role="radio" data-v="tall" aria-checked="false">Tall (phone, Shorts)</button>
       </div>
       <label class="check keys-only"><input type="checkbox" id="ribbon" checked><span>Written music on a film strip<small>The notes pass a line of light at the top and glow as they are played.</small></span></label>
+      <h2 class="keys-only">On the film strip</h2>
+      <div class="seg keys-only" id="strip" role="radiogroup" aria-label="On the film strip">
+        <button type="button" role="radio" data-v="notes" aria-checked="true">Written notes</button>
+        <button type="button" role="radio" data-v="lines" aria-checked="false">Flight lines</button>
+      </div>
+      <label class="check sheet-only"><input type="checkbox" id="paths" checked><span>Paths of light from note to note<small>A light for each hand hops along the music and lands on every note as it is played.</small></span></label>
       <label class="check keys-only"><input type="checkbox" id="dots" checked><span>Bouncing balls on the film strip<small>A ball for each hand jumps from note to note and moves from left to right as the piece goes on, reaching the right end as it finishes.</small></span></label>
       <label class="check"><input type="checkbox" id="labels"><span>Show note names</span></label>
       <label class="check"><input type="checkbox" id="effects" checked><span>Sparks, mist and light beams</span></label>
@@ -133,6 +140,6 @@
   </aside>
 </main>
 <footer class="credits">Grand piano recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Electric pianos and harpsichord: FluidR3 GM by Frank Wen.</footer>
-<script type="module" src="assets/js/studio.js?v=18"></script>
+<script type="module" src="assets/js/studio.js?v=19"></script>
 </body>
 </html>

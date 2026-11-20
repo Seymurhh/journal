@@ -1,7 +1,7 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
-import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=10';
-import { createStage } from './stage.js?v=18';
+import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=11';
+import { createStage } from './stage.js?v=19';
 import { createListener, STYLE_NAMES } from './listen.js?v=8';
 import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=12';
 
@@ -13,7 +13,7 @@ const V = { rec: null, chunks: [], dest: null }; // live screen recording
 const R = { on: false, events: [], start: 0 }; // recording of what is played
 const L = { access: null, inputs: [], held: new Map(), trail: [], voices: new Map(), sustained: [], pedal: false, last: -99 }; // live playing
 const ui = Object.fromEntries(['play', 'seek', 'clock', 'speed', 'midifile', 'demo', 'record', 'savemidi', 'labels', 'effects', 'motion', 'mic', 'capture', 'vtitle', 'size', 'fps',
-  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon', 'library', 'dots'].map((id) => [id, $('#' + id)]));
+  'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon', 'library', 'dots', 'paths'].map((id) => [id, $('#' + id)]));
 const say = (id, text) => { $('#' + id).textContent = text; };
 const mmss = (s) => { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 const safeName = () => (P.name || 'piano').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'piano';
@@ -22,7 +22,7 @@ const fill = (el) => el.style.setProperty('--fill', `${((el.value - el.min) / (e
 
 // ---------- choices are remembered on this computer ----------
 const PHONE = matchMedia('(max-width: 640px)').matches; // a phone held upright: start with the tall picture looking along the keys, which fills the screen
-const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, dots: true, labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
 const C = { ...DEFAULTS };
 try { const saved = JSON.parse(localStorage.getItem('studio') || '{}'); if (!(saved.v >= 2)) delete saved.labels; if (saved.v !== 3) delete saved.notes; Object.assign(C, saved, { v: 3 }); } catch {} // v 2: note names off unless switched on again; v 3: notes are trails of light unless changed again
 const remember = () => { try { localStorage.setItem('studio', JSON.stringify(C)); } catch {} };
@@ -195,16 +195,19 @@ function hear() { // dancer view: tell the stage what the music is doing, and sa
 function pictureChanged() {
   $('#dance-box').hidden = C.view !== 'dancer';
   document.body.classList.toggle('no-keys', C.view !== 'piano');
+  document.body.classList.toggle('no-sheet', C.view !== 'sheet');
   if (C.view !== 'dancer') { stage.setMusic(null); if (!L.held.size) ui.now.textContent = ''; }
   else if (!A.ctx) say('rec-msg', 'The dancer is waiting for music: press "Listen with the microphone", or Play, or play the piano.');
 }
-radios($('#views'), [], C.view, (v) => { C.view = v; remember(); stage.setView(M.on && v === 'piano' ? 'flight' : v); pictureChanged(); });
+radios($('#views'), [], C.view, (v) => { C.view = v; remember(); stage.setView(M.on && (v === 'piano' || v === 'sheet') ? 'flight' : v); pictureChanged(); });
 radios($('#dances'), [], C.dance, (v) => { C.dance = v; remember(); stage.setDance(v); });
 radios($('#cameras'), [], C.camera, (v) => { C.camera = v; remember(); stage.setCamera(v); });
 radios($('#shapes'), [], C.shape, (v) => { C.shape = v; remember(); box.classList.toggle('tall', v === 'tall'); fit(); });
 radios($('#notes'), [], C.notes, (v) => { C.notes = v; remember(); stage.setNotes(v); });
+radios($('#strip'), [], C.strip, (v) => { C.strip = v; remember(); stage.setStrip(v); });
+stage.setStrip(C.strip);
 stage.setNotes(C.notes);
-for (const [k, fn] of [['labels', 'setLabels'], ['effects', 'setEffects'], ['motion', 'setMotion'], ['ribbon', 'setRibbon'], ['dots', 'setDots']]) {
+for (const [k, fn] of [['labels', 'setLabels'], ['effects', 'setEffects'], ['motion', 'setMotion'], ['ribbon', 'setRibbon'], ['dots', 'setDots'], ['paths', 'setPaths']]) {
   ui[k].checked = C[k]; stage[fn](C[k]);
   ui[k].addEventListener('change', () => { C[k] = ui[k].checked; remember(); stage[fn](C[k]); });
 }
@@ -424,7 +427,7 @@ ui.mic.addEventListener('click', async () => {
   M.src = A.ctx.createMediaStreamSource(M.stream); M.src.connect(M.node); M.src.connect(A.ear.node);
   if (V.dest) M.src.connect(V.dest);
   M.pts = []; M.x = 0; M.last = null; M.start = performance.now(); M.on = true;
-  stage.setMic(M.pts); if (C.view === 'piano') stage.setView('flight'); // the microphone draws flight lines, or moves the dancer; the piano picture comes back afterwards
+  stage.setMic(M.pts); if (C.view === 'piano' || C.view === 'sheet') stage.setView('flight'); // the microphone draws flight lines, or moves the dancer; the piano picture comes back afterwards
   enable();
   ui.mic.textContent = 'Stop listening'; ui.mic.classList.add('on');
   say('rec-msg', C.view === 'dancer' ? 'Listening. Play any music near the computer: after a few seconds the dancer finds the beat. Nothing is recorded or sent anywhere.'

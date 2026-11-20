@@ -12,11 +12,28 @@ const W = 2048, H = 300, SP = 13; // canvas size and the distance between two st
 const TREBLE = 112, BASS = 226;   // y of the bottom line of each staff (E4 and G2)
 const PXS = 150;                  // pixels of strip per second of music
 const LETTER_PC = [0, 2, 4, 5, 7, 9, 11], FLATS = [6, 2, 5, 1, 4, 0, 3], SHARPS = [3, 0, 4, 1, 5, 2, 6]; // letters as C=0 … B=6
-const SIG = { flat: { treble: [34, 37, 33, 36, 32, 35, 31], bass: [20, 23, 19, 22, 18, 21, 17] }, sharp: { treble: [38, 35, 39, 36, 33, 37, 34], bass: [24, 21, 25, 22, 19, 23, 20] } }; // staff steps of the key signature
+export const SIG = { flat: { treble: [34, 37, 33, 36, 32, 35, 31], bass: [20, 23, 19, 22, 18, 21, 17] }, sharp: { treble: [38, 35, 39, 36, 33, 37, 34], bass: [24, 21, 25, 22, 19, 23, 20] } }; // staff steps of the key signature
 const stepY = (step, staff) => (staff ? BASS - (step - 18) * SP / 2 : TREBLE - (step - 30) * SP / 2); // step = octave * 7 + letter; E4 = 30, G2 = 18
 
+// When each bar starts (seconds), where the file gives a tempo and a time signature. Follows changes of time
+// signature, so a one-beat pickup bar is its own short bar. Empty when the file does not say.
+export function barTimes(piece) {
+  const tempo = piece.tempoMap && piece.tempoMap.length ? piece.tempoMap : null;
+  if (!tempo || !piece.meter || piece.source !== 'midi') return [];
+  const meters = piece.meterMap && piece.meterMap.length ? piece.meterMap : [{ time: 0, meter: piece.meter }];
+  const bars = [];
+  let t = 0, i = 0, j = 0;
+  while (t < piece.duration + 1 && bars.length < 4000) {
+    bars.push(t);
+    while (j + 1 < meters.length && meters[j + 1].time <= t + 1e-6) j++;
+    const per = meters[j].meter[0] * 4 / meters[j].meter[1];
+    for (let k = 0; k < Math.round(per * 4); k++) { while (i + 1 < tempo.length && tempo[i + 1].time <= t + 1e-6) i++; t += 15 / tempo[i].bpm; }
+  }
+  return bars;
+}
+
 // Which key fits the notes best, when the file does not say: the one whose scale holds the most of them.
-function guessKey(notes) {
+export function guessKey(notes) {
   const count = new Array(12).fill(0);
   for (const n of notes) count[n.pitch % 12]++;
   let best = 0, top = -1;
@@ -27,7 +44,7 @@ function guessKey(notes) {
   return best;
 }
 // How a pitch is written in a key: its place on the staff and the sign in front of it, if it needs one.
-function speller(sf) {
+export function speller(sf) {
   const alter = new Array(7).fill(0);
   for (let i = 0; i < Math.abs(sf); i++) alter[(sf < 0 ? FLATS : SHARPS)[i]] = Math.sign(sf);
   return (pitch) => {
@@ -54,12 +71,7 @@ function prepare(piece) {
     if (last && last.staff === staff && Math.abs(last.t - n.onset) < 0.03 && !last.grace) { last.heads.push(head); last.dur = Math.max(last.dur, n.dur); last.beats = Math.max(last.beats, beats); }
     else marks.push({ t: n.onset, dur: n.dur, beats, staff, heads: [head], vel: n.vel, grace: beats < 0.22, color: two ? n.track : n.pitch < 60 ? 1 : 0 });
   }
-  const bars = [];
-  if (tempo && piece.meter && piece.source === 'midi') { // bar lines, where the file gives a tempo and a time signature
-    const per = piece.meter[0] * 4 / piece.meter[1];
-    let t = 0, i = 0;
-    while (t < piece.duration + 1 && bars.length < 2000) { bars.push(t); for (let k = 0; k < per * 4; k++) { while (i + 1 < tempo.length && tempo[i + 1].time <= t + 1e-6) i++; t += 15 / tempo[i].bpm; } }
-  }
+  const bars = barTimes(piece);
   // for the bouncing dots: where each staff's notes are, in order (grace notes are too quick to land on)
   const landings = [0, 1].map((staff) => marks.filter((m) => m.staff === staff && !m.grace).map((m) => ({ t: m.t, y: Math.max(30, Math.min(H - 30, Math.min(...m.heads.map((h) => stepY(h.step, staff))))) })));
   return { sf, marks, bars, landings };
@@ -178,7 +190,7 @@ export function buildScore(T, camera) {
   }
 
   // t = music time (or the clock, when playing live). trail = notes being played live, or null to show the piece.
-  function update(t, piece, trail, dots) {
+  function update(t, piece, trail, dots, lines = false) {
     if (!trail && piece && of !== piece) { prepared = prepare(piece); of = piece; }
     const w = used, live = !!trail;
     // Where on the strip "now" is. With the balls on, it travels from the left end to the right end over the whole piece,
@@ -204,7 +216,40 @@ export function buildScore(T, camera) {
         g.strokeStyle = 'rgba(255,246,228,0.3)'; g.lineWidth = 1.2; g.beginPath();
         for (const b of prepared.bars) { if (b < from || b > to) continue; const x = now + (b - t) * PXS - 22; if (x > LEFT + 20) { g.moveTo(x, TREBLE - 4 * SP); g.lineTo(x, BASS); } }
         g.stroke();
-        const list = prepared.marks;
+        if (lines) { // flight lines instead of notes: each hand's melody as one line of light, bright where it has been played
+          for (const staff of [0, 1]) {
+            const land = prepared.landings[staff];
+            if (!land.length) continue;
+            const hot = colors[staff % colors.length];
+            const yAt = (tau) => {
+              let a = 0, b = land.length - 1;
+              if (tau <= land[0].t) return land[0].y;
+              while (a < b) { const m = (a + b + 1) >> 1; if (land[m].t <= tau) a = m; else b = m - 1; }
+              const p = land[a], q = land[a + 1];
+              if (!q) return p.y;
+              let u = Math.min(1, Math.max(0, ((tau - p.t) / (q.t - p.t) - 0.15) / 0.85)); u = u * u * (3 - 2 * u);
+              return p.y + (q.y - p.y) * u;
+            };
+            const path = (x0, x1) => { g.beginPath(); let first = true; for (let x = x0; x <= x1 + 0.1; x += 3) { const y = yAt(t + (x - now) / PXS); if (first) g.moveTo(x, y); else g.lineTo(x, y); first = false; } };
+            g.lineCap = g.lineJoin = 'round';
+            path(now, w - 40); g.strokeStyle = mix('#cfc8b6', hot, 0.3); g.globalAlpha = 0.5; g.lineWidth = 2; g.stroke(); // still to come: thin and pale
+            g.shadowColor = hot; g.shadowBlur = 16; g.strokeStyle = hot; g.lineWidth = 3.6;
+            for (let x1 = now; x1 > LEFT; x1 -= 36) { // played: bright, fading as it moves away to the left
+              const x0 = Math.max(LEFT, x1 - 36);
+              path(x0, x1 + 2); g.globalAlpha = fadeAt(x0) * Math.max(0.18, 1 - (now - x1) / (now - LEFT + 1)); g.stroke();
+            }
+            g.shadowBlur = 0;
+            for (const m of land) { // a bead of light where each note falls
+              const x = now + (m.t - t) * PXS;
+              if (x < LEFT || x > w - 40) continue;
+              const past = m.t <= t, fresh = past && t - m.t < 0.4;
+              g.globalAlpha = fadeAt(x) * (past ? 0.95 : 0.55); g.fillStyle = fresh ? '#ffffff' : past ? hot : '#cfc8b6';
+              g.beginPath(); g.arc(x, m.y, fresh ? 5 : past ? 3.4 : 2.6, 0, 7); g.fill();
+            }
+            g.globalAlpha = 1;
+          }
+        }
+        const list = lines ? [] : prepared.marks;
         let lo = 0, hi = list.length;
         while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].t < from - 8) lo = m + 1; else hi = m; }
         for (let i = lo; i < list.length && list[i].t < to; i++) {

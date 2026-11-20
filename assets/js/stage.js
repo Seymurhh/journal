@@ -1,10 +1,11 @@
 // The 3D scene: a lacquered piano with jewel-coloured notes travelling toward the keys they play.
 // Everything is a pure function of the music time t, so a video export draws exactly what playback shows.
 import * as THREE from '../vendor/three.min.js?v=7';
-import { isBlack, noteName } from './midi.js?v=10';
+import { isBlack, noteName } from './midi.js?v=11';
 import { buildFlight, voicesFromPiece } from './flight.js?v=13';
 import { buildDancer } from './dancer.js?v=9';
-import { buildScore } from './score.js?v=18';
+import { buildScore } from './score.js?v=19';
+import { buildSheet } from './sheet.js?v=1';
 
 const THEMES = {
   aurora: { bg: ['#000000', '#01030a'], fog: '#000103', runway: '#020304', trim: '#3dffa0', led: '#35ff8a', ledLight: 1.1, dim: 0.3, felt: '#06301c', white: '#eef5f1', black: '#050607',
@@ -95,7 +96,7 @@ export function createStage(canvas) {
   const clip = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]; // hide the part of a note that has passed the keys
   const dot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const beamTex = canvasTex(32, 128, (g, w, h) => { const r = g.createLinearGradient(0, h, 0, 0); r.addColorStop(0, 'rgba(255,255,255,.95)'); r.addColorStop(0.25, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  const S = { notes: 'trails', ribbon: true, dots: true, score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
+  const S = { notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, sheet: null, score: null, theme: 'aurora', camera: 'front', trail: null, pool: [], labels: true, effects: true, motion: true, piece: null, view: 'piano', voices: [], mic: null, flight: null, scene: null, keys: [], items: [], beams: [], live: new Map(), far: 60, cam: null };
   const labelMats = new Map(), ray = new THREE.Raycaster(), point = new THREE.Vector2();
 
   function labelMaterial(pitch, T) {
@@ -115,6 +116,13 @@ export function createStage(canvas) {
       S.dancer = buildDancer(THEMES[S.theme], { canvasTex, dot });
       [bloom.strength, bloom.radius, bloom.threshold] = [0.7, 0.5, 0.3];
       renderPass.scene = S.scene = S.old = S.dancer.scene;
+      return;
+    }
+    if (S.view === 'sheet') {
+      S.sheet = buildSheet(THEMES[S.theme], { canvasTex, dot, env }, S.piece);
+      [bloom.strength, bloom.radius, bloom.threshold] = [0.75, 0.5, 0.72];
+      renderer.toneMappingExposure = 1;
+      renderPass.scene = S.scene = S.old = S.sheet.scene;
       return;
     }
     if (S.view === 'flight') {
@@ -287,6 +295,11 @@ export function createStage(canvas) {
   function render(t, live = false) {
     if (!S.scene) build();
     if (S.view === 'dancer') { S.dancer.render(camera, S.music, { effects: S.effects, motion: S.motion, style: S.dance }); composer.render(); return; }
+    if (S.view === 'sheet') {
+      S.sheet.render(t, camera, { live: live ? S.trail || [] : null, effects: S.effects, motion: S.motion, paths: S.paths });
+      composer.render();
+      return;
+    }
     if (S.view === 'flight') {
       const src = S.mic ? S.mic.slice(-400) : S.piece ? S.piece.notes : [];
       let lo = 48, hi = 84;
@@ -437,7 +450,7 @@ export function createStage(canvas) {
     });
     S.strike.material.emissiveIntensity = T.glow * (1.1 + Math.min(1, energy * 0.3));
     S.score.mesh.visible = S.ribbon;
-    if (S.ribbon) S.score.update(t, S.piece, live ? trail : null, S.dots);
+    if (S.ribbon) S.score.update(t, S.piece, live ? trail : null, S.dots, S.strip === 'lines');
     composer.render();
   }
 
@@ -449,7 +462,7 @@ export function createStage(canvas) {
       camera.aspect = w / h; camera.updateProjectionMatrix(); S.scene = null;
     },
     setPiece(piece) { S.piece = piece; S.voices = piece ? voicesFromPiece(piece) : []; S.scene = null; },
-    setView(v) { S.view = ['flight', 'dancer'].includes(v) ? v : 'piano'; S.scene = null; },
+    setView(v) { S.view = ['flight', 'dancer', 'sheet'].includes(v) ? v : 'piano'; S.scene = null; },
     setMusic(features) { S.music = features; },
     dancer: () => S.dancer,
     setDance(style) { S.dance = style; },
@@ -464,6 +477,8 @@ export function createStage(canvas) {
     setLabels(on) { S.labels = on; },
     setRibbon(on) { S.ribbon = on; },
     setDots(on) { S.dots = on; },
+    setStrip(kind) { S.strip = kind === 'lines' ? 'lines' : 'notes'; },
+    setPaths(on) { S.paths = on; },
     setNotes(kind) { S.notes = ['bars', 'water'].includes(kind) ? kind : 'trails'; S.scene = null; },
     setEffects(on) { S.effects = on; },
     setMotion(on) { S.motion = on; },

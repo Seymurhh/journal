@@ -54,7 +54,11 @@ export function parseMidi(buffer) {
       if (status === 0xff) {
         const type = u8(), l = vlq();
         if (type === 0x51 && l === 3) ev.push({ tick, order: 0, tempo: (d.getUint8(p) << 16) | (d.getUint8(p + 1) << 8) | d.getUint8(p + 2) });
-        else if (type === 0x58 && l >= 2 && !info.meter) info.meter = [d.getUint8(p), 2 ** d.getUint8(p + 1)]; // time signature
+        else if (type === 0x58 && l >= 2) { // time signature; a piece can change it (a one-beat pickup bar, for example)
+          const m = [d.getUint8(p), 2 ** d.getUint8(p + 1)];
+          if (!info.meter) info.meter = m;
+          ev.push({ tick, order: 0, meter: m });
+        }
         else if (type === 0x59 && l >= 2 && !info.key) info.key = { sf: d.getInt8(p), minor: d.getUint8(p + 1) === 1 }; // key signature: sharps (+) or flats (-)
         p += l;
       } else if (status === 0xf0 || status === 0xf7) { p += vlq(); }
@@ -69,13 +73,14 @@ export function parseMidi(buffer) {
     p = end;
   }
   ev.sort((x, y) => x.tick - y.tick || x.order - y.order);
-  const piece = { source: 'midi', notes: [], pedal: [], tempoMap: [], ...info };
+  const piece = { source: 'midi', notes: [], pedal: [], tempoMap: [], meterMap: [], ...info };
   let tempo = 500000, lastTick = 0, time = 0;
   const open = new Map();
   for (const e of ev) {
     time += ((e.tick - lastTick) * tempo) / division / 1e6;
     lastTick = e.tick;
     if (e.tempo) { tempo = e.tempo; piece.tempoMap.push({ time, bpm: Math.round(6e7 / tempo) }); }
+    else if (e.meter) { const last = piece.meterMap[piece.meterMap.length - 1]; if (last && Math.abs(last.time - time) < 1e-6) last.meter = e.meter; else piece.meterMap.push({ time, meter: e.meter }); }
     else if (e.pedal != null) piece.pedal.push({ time, down: e.pedal });
     else if (e.on != null) {
       const k = e.track * 2048 + e.ch * 128 + e.on;
