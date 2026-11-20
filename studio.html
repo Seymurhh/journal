@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Piano studio</title>
-<link rel="stylesheet" href="assets/css/studio.css?v=15">
+<link rel="stylesheet" href="assets/css/studio.css?v=16">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -27,6 +27,7 @@
       <canvas id="stage" aria-label="3D piano: glowing notes travel to the keys that play them"></canvas>
       <p id="overlay" class="overlay"></p>
       <p id="now" class="now" aria-hidden="true"></p>
+      <canvas id="cardview" class="cardview" hidden aria-hidden="true"></canvas>
       <button id="unfill" class="unfill" type="button" aria-label="Leave full screen">Close</button>
     </div>
 
@@ -127,6 +128,12 @@
         <button type="button" role="radio" data-v="aurora" aria-checked="false">Aurora</button>
         <button type="button" role="radio" data-v="galaxy" aria-checked="false">Galaxy</button>
       </div>
+      <h2 class="sheet-only">Where a ball lands</h2>
+      <div class="seg sheet-only" id="landing" role="radiogroup" aria-label="Where a ball lands">
+        <button type="button" role="radio" data-v="sparks" aria-checked="true">Sparks</button>
+        <button type="button" role="radio" data-v="powder" aria-checked="false">Powder</button>
+        <button type="button" role="radio" data-v="both" aria-checked="false">Both</button>
+      </div>
       <label class="slider sheet-only"><span>Glow of the notes <small>(left: matte)</small></span><input type="range" id="glow" min="0" max="1" step="0.05" value="0.45"></label>
       <label class="check sheet-only"><input type="checkbox" id="paths" checked><span>Paths of light from note to note<small>A light for each hand hops along the music and lands on every note as it is played.</small></span></label>
       <label class="check keys-only"><input type="checkbox" id="dots" checked><span>Bouncing balls on the film strip<small>A ball for each hand jumps from note to note and moves from left to right as the piece goes on, reaching the right end as it finishes.</small></span></label>
@@ -146,6 +153,25 @@
       <progress id="prog" max="1" value="0" hidden></progress>
       <p id="exp-msg" class="fine" role="status">The video uses the instrument, room, colours, camera and shape you have chosen.</p>
       <a id="download" class="btn main" hidden>Save the video</a>
+      <h2>Opening and closing cards</h2>
+      <p class="fine">Filled in from the piece you open; change anything before making the video. The sound's credit is always added to the closing card.</p>
+      <label class="check"><input type="checkbox" id="card-open" checked><span>Opening card<small>The name of the piece and its composer, for 5 seconds before the music.</small></span></label>
+      <label class="check"><input type="checkbox" id="card-close" checked><span>Closing card<small>A thank-you and the credits, for 7 seconds after the music, ending in black.</small></span></label>
+      <label class="field"><span>Look</span><select id="card-style"></select></label>
+      <label class="field"><span>Name of the piece</span><input type="text" id="card-title" maxlength="80"></label>
+      <div class="grid2">
+        <label class="field"><span>Composer</span><input type="text" id="card-composer" maxlength="60"></label>
+        <label class="field"><span>Line under it (optional)</span><input type="text" id="card-subtitle" maxlength="60" placeholder="Piano cover"></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Channel name</span><input type="text" id="card-channel" maxlength="40"></label>
+        <label class="field"><span>Closing words</span><input type="text" id="card-message" maxlength="60"></label>
+      </div>
+      <label class="field"><span>Credits (one per line)</span><textarea id="card-credits" rows="3" maxlength="400" placeholder="Arrangement: …"></textarea></label>
+      <div class="grid2">
+        <button class="btn" id="preview-open" type="button">Preview the opening</button>
+        <button class="btn" id="preview-close" type="button">Preview the closing</button>
+      </div>
       <h2>Or film the screen live</h2>
       <button class="btn" id="capture" type="button">Start filming</button>
       <p id="cap-msg" class="fine" role="status">Films the picture with its sound until you press Stop. Use this to capture her playing live.</p>
@@ -155,6 +181,6 @@
   </aside>
 </main>
 <footer class="credits">Grand piano recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Electric pianos and harpsichord: FluidR3 GM by Frank Wen.</footer>
-<script type="module" src="assets/js/studio.js?v=22"></script>
+<script type="module" src="assets/js/studio.js?v=24"></script>
 </body>
 </html>

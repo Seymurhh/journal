@@ -1,8 +1,9 @@
 // Piano studio: play live from the piano, load or record a performance, watch it in 3D, and make a video. Everything runs in the browser.
 import { $, fetchJSON, session, b64, importKey, readVault, openBytes } from './core.js?v=5';
-import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=11';
-import { createStage } from './stage.js?v=22';
+import { parseMidi, fromRecording, writeMidi, demoPiece, noteName } from './midi.js?v=12';
+import { createStage } from './stage.js?v=24';
 import { createListener, STYLE_NAMES } from './listen.js?v=8';
+import { drawCard, OPEN, CLOSE, STYLES } from './cards.js?v=2';
 import { INSTRUMENTS, ROOMS, makeOutput, noteOn, voice, renderPiece, loadInstrument, isLoaded } from './synth.js?v=12';
 
 const LEAD = 1.5, TAIL = 2.5; // seconds of runway before the first note and after the last
@@ -12,6 +13,41 @@ const A = { ctx: null, out: null, ear: null }; // sound: one audio context, and 
 const V = { rec: null, chunks: [], dest: null }; // live screen recording
 const R = { on: false, events: [], start: 0 }; // recording of what is played
 const L = { access: null, inputs: [], held: new Map(), trail: [], voices: new Map(), sustained: [], pedal: false, last: -99 }; // live playing
+// ---------- opening and closing cards ----------
+const capital = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+function guessMeta(piece, name) { // from the file: "Title (Composer) - subtitle" in its track name, or else its file name
+  const label = piece.label || '', m = label.match(/^(.*?)\s*\((.*?)\)\s*(?:[-–—:]\s*(.*))?$/);
+  if (m) return { title: m[1], composer: m[2], subtitle: m[3] ? m[3].charAt(0).toUpperCase() + m[3].slice(1) : '', credits: [] };
+  return { title: label || capital(String(name || '').replace(/[_-]+/g, ' ')), composer: '', subtitle: '', credits: [] };
+}
+function fillCard(meta) {
+  $('#card-title').value = meta.title || ''; $('#card-composer').value = meta.composer || '';
+  $('#card-subtitle').value = meta.subtitle || ''; $('#card-credits').value = (meta.credits || []).join('\n');
+}
+const soundCredit = () => ((INSTRUMENTS.find((i) => i.id === C.instrument) || {}).pack === 'grand'
+  ? 'Piano sound: Salamander Grand Piano by Alexander Holm (CC BY 3.0)' : 'Instrument sound: FluidR3 GM by Frank Wen (MIT)');
+function cardInfo() {
+  const v = (id) => $(id).value.trim();
+  return { title: v('#card-title'), composer: v('#card-composer'), subtitle: v('#card-subtitle'), channel: C.channel, message: C.message,
+    credits: [...v('#card-credits').split('\n').map((s) => s.trim()).filter(Boolean), soundCredit()] }; // the sound's licence asks for credit, so it is always there
+}
+const accentColor = () => stage.themes()[C.theme]?.[0] || '#3dffa0';
+let previewRun = 0;
+function previewCard(kind) { // play a card over the picture, as it will appear in the video
+  const cv = $('#cardview'), run = ++previewRun, t0 = performance.now(), dur = kind === 'open' ? OPEN : CLOSE, info = cardInfo(), tint = accentColor();
+  cv.hidden = false;
+  const tick = () => {
+    if (run !== previewRun) return;
+    const u = (performance.now() - t0) / 1000, r = Math.min(devicePixelRatio || 1, 2), w = Math.round(cv.clientWidth * r), h = Math.round(cv.clientHeight * r);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    const g = cv.getContext('2d'); g.clearRect(0, 0, w, h);
+    if (u > dur) { cv.hidden = true; return; }
+    drawCard(g, w, h, kind, u, info, C.cardStyle, tint);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 const ui = Object.fromEntries(['play', 'seek', 'clock', 'speed', 'midifile', 'demo', 'record', 'savemidi', 'labels', 'effects', 'motion', 'mic', 'capture', 'vtitle', 'size', 'fps',
   'export', 'prog', 'download', 'overlay', 'connect', 'volume', 'monitor', 'now', 'ribbon', 'library', 'dots', 'paths', 'glow'].map((id) => [id, $('#' + id)]));
 const say = (id, text) => { $('#' + id).textContent = text; };
@@ -22,7 +58,7 @@ const fill = (el) => el.style.setProperty('--fill', `${((el.value - el.min) / (e
 
 // ---------- choices are remembered on this computer ----------
 const PHONE = matchMedia('(max-width: 640px)').matches; // a phone held upright: start with the tall picture looking along the keys, which fills the screen
-const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, sheetCam: 'side', glow: 0.45, sky: 'stars', labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+const DEFAULTS = { instrument: 'grand', room: 'hall', volume: 0.9, monitor: true, theme: 'aurora', view: 'piano', v: 3, dance: 'auto', camera: PHONE ? 'side' : 'front', shape: PHONE ? 'tall' : 'wide', notes: 'trails', ribbon: true, dots: true, strip: 'notes', paths: true, sheetCam: 'side', glow: 0.45, sky: 'stars', landing: 'sparks', cardOpen: true, cardClose: true, cardStyle: 'lumen', channel: 'Lumen Keys', message: 'Thank you for listening', labels: false, effects: true, motion: !matchMedia('(prefers-reduced-motion: reduce)').matches };
 const C = { ...DEFAULTS };
 try { const saved = JSON.parse(localStorage.getItem('studio') || '{}'); if (!(saved.v >= 2)) delete saved.labels; if (saved.v !== 3) delete saved.notes; Object.assign(C, saved, { v: 3 }); } catch {} // v 2: note names off unless switched on again; v 3: notes are trails of light unless changed again
 const remember = () => { try { localStorage.setItem('studio', JSON.stringify(C)); } catch {} };
@@ -39,8 +75,9 @@ function enable() {
   for (const k of ['play', 'seek', 'export', 'savemidi']) ui[k].disabled = off;
   if (V.rec) ui.export.disabled = true;
 }
-function load(piece, name) {
+function load(piece, name, meta) {
   pause();
+  if (piece) fillCard(meta || guessMeta(piece, name));
   P.piece = piece; P.name = name; P.pos = -LEAD; L.last = -99;
   stage.setPiece(piece);
   say('piece-title', name);
@@ -207,6 +244,14 @@ radios($('#notes'), [], C.notes, (v) => { C.notes = v; remember(); stage.setNote
 radios($('#strip'), [], C.strip, (v) => { C.strip = v; remember(); stage.setStrip(v); });
 radios($('#sheetcam'), [], C.sheetCam, (v) => { C.sheetCam = v; remember(); stage.setSheetCam(v); });
 radios($('#sky'), [], C.sky, (v) => { C.sky = v; remember(); stage.setSky(v); });
+for (const [id, key] of [['#card-open', 'cardOpen'], ['#card-close', 'cardClose']]) { $(id).checked = C[key]; $(id).addEventListener('change', () => { C[key] = $(id).checked; remember(); }); }
+for (const [id, key] of [['#card-channel', 'channel'], ['#card-message', 'message']]) { $(id).value = C[key]; $(id).addEventListener('input', () => { C[key] = $(id).value; remember(); }); }
+$('#card-style').innerHTML = Object.entries(STYLES).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+$('#card-style').value = C.cardStyle; $('#card-style').addEventListener('change', () => { C.cardStyle = $('#card-style').value; remember(); });
+$('#preview-open').addEventListener('click', () => previewCard('open'));
+$('#preview-close').addEventListener('click', () => previewCard('close'));
+radios($('#landing'), [], C.landing, (v) => { C.landing = v; remember(); stage.setLanding(v); });
+stage.setLanding(C.landing);
 stage.setSheetCam(C.sheetCam); stage.setSky(C.sky); stage.setGlow(C.glow);
 ui.glow.value = C.glow; fill(ui.glow);
 ui.glow.addEventListener('input', () => { C.glow = Number(ui.glow.value); remember(); stage.setGlow(C.glow); fill(ui.glow); });
@@ -270,7 +315,7 @@ ui.library.addEventListener('change', async () => {
   try {
     const r = await fetch(`assets/music/${it.file}?v=1`);
     if (!r.ok) throw new Error('The piece could not be loaded.');
-    load(parseMidi(await r.arrayBuffer()), `${it.title} · ${it.composer}`);
+    load(parseMidi(await r.arrayBuffer()), `${it.title} · ${it.composer}`, { title: it.title, composer: it.composer, subtitle: '', credits: [it.credit] });
     say('rec-msg', `${it.credit}.`);
     play();
   } catch (err) { say('rec-msg', err.message || 'The piece could not be loaded.'); }
@@ -518,15 +563,20 @@ async function makeVideo() {
     stage.resize(w, h, short <= 1080 ? 2 : short <= 1440 ? 1.5 : 1);
     const comp = document.createElement('canvas'); comp.width = w; comp.height = h;
     const g = comp.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-    const title = ui.vtitle.value.trim(), total = Math.ceil((LEAD + P.piece.duration + TAIL) * fps);
+    const title = ui.vtitle.value.trim(), intro = C.cardOpen ? OPEN : 0, outro = C.cardClose ? CLOSE : 0, end = P.piece.duration + TAIL;
+    const total = Math.ceil((intro + LEAD + P.piece.duration + TAIL + outro) * fps), info = cardInfo(), tint = accentColor();
     for (let i = 0; i < total && !failed; i++) {
-      stage.render(i / fps - LEAD);
+      const t = i / fps - LEAD - intro; // music time: the opening card plays before the runway, the closing card after the end
+      stage.render(Math.min(t, end + 2.5));
       g.drawImage(canvas, 0, 0, w, h);
       if (title) {
         g.font = `600 ${Math.round(Math.min(w, h) * 0.045)}px Georgia, serif`; g.textBaseline = 'top';
         g.fillStyle = '#ffffff'; g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = h * 0.012;
         g.fillText(title, w * 0.035, h * 0.04);
       }
+      g.shadowBlur = 0;
+      if (intro && t < -LEAD) drawCard(g, w, h, 'open', i / fps, info, C.cardStyle, tint);
+      if (outro && t > end) drawCard(g, w, h, 'close', t - end, info, C.cardStyle, tint);
       const vf = new VideoFrame(comp, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
       venc.encode(vf, { keyFrame: i % (fps * 2) === 0 });
       vf.close();
@@ -538,7 +588,7 @@ async function makeVideo() {
 
     if (ac) {
       await loadInstrument(C.instrument);
-      const buf = await renderPiece(P.piece, LEAD, TAIL, { instrument: C.instrument, room: C.room, volume: 1 });
+      const buf = await renderPiece(P.piece, LEAD + intro, TAIL + outro, { instrument: C.instrument, room: C.room, volume: 1 });
       const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => { failed = e; } });
       aenc.configure({ codec: ac.codec, sampleRate: 48000, numberOfChannels: 2, bitrate: 128000 });
       const L = buf.getChannelData(0), Rr = buf.getChannelData(1), step = 4800;

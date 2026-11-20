@@ -135,8 +135,8 @@ function engrave(piece) {
     for (const c of chords) {
       if (c.staff !== staff) continue;
       const y = staff ? c.heads[0].y : c.heads[c.heads.length - 1].y, l = out[out.length - 1];
-      if (l && l.t === c.t) l.y = staff ? Math.min(l.y, y) : Math.max(l.y, y);
-      else out.push({ t: c.t, x: c.x, y });
+      if (l && l.t === c.t) { l.y = staff ? Math.min(l.y, y) : Math.max(l.y, y); l.vel = Math.max(l.vel, c.vel); }
+      else out.push({ t: c.t, x: c.x, y, vel: c.vel });
     }
     return out;
   });
@@ -152,6 +152,7 @@ const G = 60, HMAX = 2.4;              // gravity (staff spaces per second²) an
 const TAIL = 1.0, NT = 110;            // the thin tail of light: seconds, points
 const DT = 1 / 110, LIFE = 0.9;        // comet sparks: one shed every DT seconds, each glowing for LIFE seconds
 const HIT = 0.75, HITN = 22;           // sparks thrown up where a ball lands
+const PLIFE = 2.4, PN = 150;            // powder: how long it glows, and grains per landing
 const DUST = 260, POOL = 12;
 const hopHeight = (gap) => { const h = (G * gap * gap) / 8; return HMAX * (1 - Math.exp(-h / HMAX)); }; // a true gravity arc, capped softly for long notes
 
@@ -384,6 +385,8 @@ export function buildSheet(T, tools, piece) {
     return p;
   };
   const SPARKS = 1400, sparks = points(SPARKS, 0.13, 8), sparkTwin = points(SPARKS, 0.13, -1);
+  const GRAINS = 9000, powder = points(GRAINS, 0.15, 8), powderTwin = points(GRAINS, 0.15, -1); // fine glowing powder
+  const clouds = Array.from({ length: 24 }, () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, ...additive() })); s.renderOrder = 7; s.visible = false; scene.add(s); return s; });
   const dust = points(DUST, 0.08, 2);
   const flashes = Array.from({ length: POOL }, () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, ...additive() })); s.renderOrder = 9; s.visible = false; scene.add(s); return s; });
   const ringGeo = flat(new THREE.RingGeometry(0.86, 1, 48));
@@ -457,7 +460,11 @@ export function buildSheet(T, tools, piece) {
   };
   const firstIndex = (list, from) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].t < from) lo = m + 1; else hi = m; } return lo; };
 
-  function render(t, camera, { live, effects, motion, paths: showBalls, cam = 'side', glow = 0.45, sky: skyName = 'stars', px = 1 }) {
+  function render(t, camera, { live, effects, motion, paths: showBalls, cam = 'side', glow = 0.45, sky: skyName = 'stars', px = 1, landing = 'sparks' }) {
+    const doSparks = landing !== 'powder', doPowder = landing !== 'sparks';
+    let pu = 0, nc2 = 0;
+    const pp = powder.geometry.attributes, pm = powderTwin.geometry.attributes;
+    const grain = (x, y, z, c) => { if (pu >= GRAINS) return; pp.position.setXYZ(pu, x, y, z); pp.color.setXYZ(pu, c.r, c.g, c.b); pm.position.setXYZ(pu, x, -y, z); pm.color.setXYZ(pu, c.r * 0.22, c.g * 0.22, c.b * 0.22); pu++; };
     const GL = Math.max(0, Math.min(1, glow)), lift2 = 0.35 + GL; // GL: how much the notes, balls and sparks glow (0 = matte)
     const tall = camera.aspect < 1, sway = motion ? 1 : 0;
     let xc, used = 0, nf = 0, nr = 0;
@@ -545,11 +552,28 @@ export function buildSheet(T, tools, piece) {
             spark(x, y, z, col);
           }
           // where the ball lands: a flash, a ripple across the glass, and sparks that bounce and skid
-          for (let j = firstIndex(list, t - HIT); j < list.length && list[j].t <= t; j++) {
+          for (let j = firstIndex(list, t - (doPowder ? PLIFE : HIT)); j < list.length && list[j].t <= t; j++) {
             const L = list[j], a = t - L.t, k = a / HIT, seed = L.t * 31 + hand;
+            if (doPowder && a < PLIFE) {
+              // powder: a burst of fine glowing grains that races out across the glass, puffs up a little, swirls as it
+              // slows, then settles and slowly goes out; a soft cloud of light hangs over it for a moment
+              const life = a / PLIFE, many = Math.round(PN * (0.6 + 0.6 * L.vel));
+              if (a < 0.9 && nc2 < clouds.length) { const cl = clouds[nc2++], u = a / 0.9; cl.visible = true; cl.position.set(L.x, 0.35 + 0.5 * u, -L.y); cl.scale.setScalar(1 + 3.2 * Math.sqrt(u)); cl.material.color.copy(c).multiplyScalar(0.5 * lift2); cl.material.opacity = 0.5 * (1 - u) ** 2; }
+              for (let s = 0; s < many; s++) {
+                const r1 = rnd(seed + 7, s), r2 = rnd(s, seed + 3), r3 = rnd(s + 70, seed), r4 = rnd(seed, s + 140);
+                const v0 = 1.5 + 10 * r2 * r2, drag = 3.2 + 2 * r3, dist = (v0 * (1 - Math.exp(-drag * a))) / drag;
+                const an = r1 * Math.PI * 2 + (r4 - 0.5) * 1.4 * (1 - Math.exp(-1.5 * a)); // a gentle swirl as it slows
+                let y = 0.06 + ((0.4 + 2.2 * r3 * r4) * (1 - Math.exp(-3 * a))) / 3 - 0.18 * a * a;
+                if (y < 0.035) y = 0.035;
+                const glowK = (1 - life) ** 1.2 * (0.45 + 0.55 * r4) * lift2 * 2.6 * (1 + 2.2 * Math.exp(-a * 5)); // vivid as it bursts, gentle as it settles
+                col.copy(c).lerp(WHITE, Math.max(0, 1 - a * 3) * 0.6).multiplyScalar(glowK);
+                grain(L.x + Math.cos(an) * dist, y, -(L.y + Math.sin(an) * dist * 0.85), col);
+              }
+            }
+            if (a >= HIT) continue;
             if (a < 0.16 && nf < POOL) { const s = flashes[nf++], u = a / 0.16; s.visible = true; s.position.set(L.x, REST - R + 0.1, -L.y); s.scale.setScalar(0.6 + 2.0 * Math.sqrt(u)); s.material.color.copy(c).lerp(WHITE, 0.5).multiplyScalar(1.6 * lift2 - 0.4); s.material.opacity = (1 - u) ** 1.5; }
             if (a < 0.7 && nr < POOL) { const r = rings[nr++], u = a / 0.7, rad = 0.35 + 1.5 * u ** 0.6; r.visible = true; r.position.set(L.x, INK + 0.015, -L.y); r.scale.set(rad, 1, rad); r.material.color.copy(c).multiplyScalar(0.6 * lift2 * (1 - u) ** 2); }
-            for (let s = 0; s < HITN; s++) {
+            for (let s = 0; s < (doSparks ? HITN : 0); s++) {
               const an = rnd(seed, s) * Math.PI * 2, v = 1.2 + 3.4 * rnd(s, seed), vy = 1 + 3.2 * rnd(s + 50, seed), d = (v * (1 - Math.exp(-2.4 * a))) / 2.4;
               let y = 0.2 + vy * a - 4.5 * a * a;
               if (y < 0.03) y = 0.03 + (0.03 - y) * 0.2;
@@ -562,6 +586,9 @@ export function buildSheet(T, tools, piece) {
       }
     }
     sparks.geometry.setDrawRange(0, used); sparkTwin.geometry.setDrawRange(0, used);
+    powder.geometry.setDrawRange(0, pu); powderTwin.geometry.setDrawRange(0, pu);
+    pp.position.needsUpdate = pp.color.needsUpdate = pm.position.needsUpdate = pm.color.needsUpdate = true;
+    for (let i = nc2; i < clouds.length; i++) clouds[i].visible = false;
     sp.position.needsUpdate = sp.color.needsUpdate = sm.position.needsUpdate = sm.color.needsUpdate = true;
     for (let i = nf; i < POOL; i++) flashes[i].visible = false;
     for (let i = nr; i < POOL; i++) rings[i].visible = false;

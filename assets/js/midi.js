@@ -59,6 +59,10 @@ export function parseMidi(buffer) {
           if (!info.meter) info.meter = m;
           ev.push({ tick, order: 0, meter: m });
         }
+        else if (type === 0x03 && l > 0 && !info.label) { // a track's name: the first meaningful one usually names the piece
+          const s = new TextDecoder().decode(new Uint8Array(d.buffer, d.byteOffset + p, l)).trim();
+          if (/[a-z]/i.test(s) && !/^(control track|track ?\d*|piano|untitled|sequence|right hand|left hand|staff|unnamed)\b/i.test(s)) info.label = s;
+        }
         else if (type === 0x59 && l >= 2 && !info.key) info.key = { sf: d.getInt8(p), minor: d.getUint8(p + 1) === 1 }; // key signature: sharps (+) or flats (-)
         p += l;
       } else if (status === 0xf0 || status === 0xf7) { p += vlq(); }
